@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  /* Brand: deep violet ink + teal accent — replaces generic Tailwind blue */
+  --color-brand-50: #f2effb;
+  --color-brand-100: #e5defa;
+  --color-brand-200: #cabdf4;
+  --color-brand-300: #a894ea;
+  --color-brand-400: #8a6de0;
+  --color-brand-500: #6f4bd4;
+  --color-brand-600: #5b34c2;
+  --color-brand-700: #4a2aa0;
+  --color-brand-800: #3c227f;
+  --color-brand-900: #2c1a5c;
+  --color-brand-950: #1a0f3d;
+
+  --color-accent-50: #ecfdf9;
+  --color-accent-100: #d1faf0;
+  --color-accent-200: #a6f2e2;
+  --color-accent-300: #6de5cf;
+  --color-accent-400: #38d0b8;
+  --color-accent-500: #1baf9c;
+  --color-accent-600: #148d80;
+  --color-accent-700: #147268;
+  --color-accent-800: #145b54;
+  --color-accent-900: #144c47;
+
+  --color-ink-950: #150f2e;
+  --color-ink-900: #1e1740;
+
+  --font-sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+:root {
+  color-scheme: light;
+}
+
+body {
+  @apply bg-slate-50 text-slate-900 antialiased;
+  font-family: var(--font-sans);
+}

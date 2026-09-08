@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Widget Preview</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; height: 100vh; background: #f1f5f9; display: flex; align-items: center; justify-content: center; }
+    p { color: #94a3b8; font-size: 13px; }
+  </style>
+</head>
+<body>
+  <p>Preview area — the chat bubble loads in the corner using the real widget script.</p>
+  <script>
+    var params = new URLSearchParams(window.location.search);
+    var agentId = params.get('agentId');
+    var apiBase = params.get('apiBase') || window.location.origin;
+    if (agentId) {
+      var s = document.createElement('script');
+      s.src = apiBase + '/widget.js';
+      s.setAttribute('data-agent-id', agentId);
+      s.setAttribute('data-api-base-url', apiBase);
+      document.body.appendChild(s);
+    }
+  </script>
+</body>
+</html>

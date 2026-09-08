@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Widget Embed Test</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 0; padding: 40px; background: #f5f6f8; }
+    h1 { color: #222; }
+    p { color: #555; max-width: 600px; }
+  </style>
+</head>
+<body>
+  <h1>Host Website</h1>
+  <p>
+    This page represents an arbitrary customer website with the AI chat widget embedded via a
+    single script tag. The chat bubble should appear floating in the configured corner.
+  </p>
+  <p>Replace <code>data-agent-id</code> below with a real agent ID from your running backend
+    (create one via <code>POST /api/agents</code>, then check <code>GET /api/agents/&lt;id&gt;/embed-code</code>).</p>
+
+  <script src="http://localhost:8010/widget.js" data-agent-id="REPLACE_WITH_AGENT_ID" data-api-base-url="http://localhost:8010"></script>
+</body>
+</html>
