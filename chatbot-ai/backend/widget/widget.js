@@ -70,6 +70,61 @@
     return response.json();
   }
 
+
+  // Streams a turn over SSE, calling onToken per fragment. Resolves with
+  // the same payload the non-streaming endpoint returns. Rejects on any
+  // transport failure so the caller can fall back to that endpoint.
+  async function streamRequest(path, payload, onToken) {
+    var response = await fetch(apiUrl(path), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok || !response.body) throw new Error("Stream unavailable (" + response.status + ")");
+
+    var reader = response.body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = "";
+    var result = null;
+    var failure = null;
+
+    try {
+      while (true) {
+        var step = await reader.read();
+        if (step.done) break;
+        buffer += decoder.decode(step.value, { stream: true });
+
+        var boundary;
+        while ((boundary = buffer.indexOf("\n\n")) !== -1) {
+          var frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+
+          var event = "message";
+          var dataLines = [];
+          frame.split("\n").forEach(function (line) {
+            if (line.indexOf("event: ") === 0) event = line.slice(7);
+            else if (line.indexOf("data: ") === 0) dataLines.push(line.slice(6));
+          });
+          if (!dataLines.length) continue;
+
+          var data;
+          try { data = JSON.parse(dataLines.join("\n")); } catch (e) { continue; }
+
+          if (event === "token") onToken(data.text);
+          else if (event === "done") result = data;
+          else if (event === "error") failure = data.detail || "Request failed";
+        }
+      }
+    } finally {
+      // Safari leaks the reader lock if the stream ends mid-frame.
+      try { reader.releaseLock(); } catch (e) {}
+    }
+
+    if (failure) throw new Error(failure);
+    if (!result) throw new Error("Stream ended without a result");
+    return result;
+  }
+
   function el(tag, attrs, children) {
     var node = document.createElement(tag);
     if (attrs) {
@@ -432,6 +487,32 @@
     }
   };
 
+
+  ChatWidget.prototype._openLiveBubble = function () {
+    var sameAsLast = this.lastRenderedSender === "ai";
+    this.lastRenderedSender = "ai";
+    var bubble = el("div", { class: "msg ai" }, [""]);
+    var col = el("div", { class: "msg-col" }, [bubble]);
+    var avatar = sameAsLast ? el("span", { class: "msg-avatar spacer" }) : this._buildAvatarNode();
+    var row = el("div", { class: "msg-row" }, [avatar, col]);
+    this.messagesEl.appendChild(row);
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+    return { row: row, bubble: bubble, text: "" };
+  };
+
+  ChatWidget.prototype._appendLiveToken = function (live, piece) {
+    live.text += piece;
+    live.bubble.textContent = live.text;
+    this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  };
+
+  ChatWidget.prototype._discardLiveBubble = function (live) {
+    if (live && live.row && live.row.parentNode) live.row.parentNode.removeChild(live.row);
+    // The final message is rendered from the server payload, so the
+    // sender-run tracking has to be rewound as if this never existed.
+    this.lastRenderedSender = null;
+  };
+
   ChatWidget.prototype._sendCurrentInput = async function () {
     var text = this.inputEl.value.trim();
     if (!text) return;
@@ -441,16 +522,40 @@
 
     this._renderMessage({ id: "local-" + Date.now(), sender_type: "visitor", content: text, message_metadata: {} });
     var typingEl = this._showTyping();
+    var payload = { session_token: this.sessionToken, message: text };
+    var self = this;
+    var live = null;
 
     try {
-      var data = await apiRequest("/" + AGENT_ID + "/message", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ session_token: this.sessionToken, message: text }),
-      });
+      var data;
+      try {
+        data = await streamRequest("/" + AGENT_ID + "/message/stream", payload, function (piece) {
+          if (!live) {
+            self._removeTyping(typingEl);
+            typingEl = null;
+            live = self._openLiveBubble();
+          }
+          self._appendLiveToken(live, piece);
+        });
+      } catch (streamError) {
+        // Any transport that can't do SSE — a buffering proxy, an old
+        // browser, the endpoint being unavailable — falls back rather
+        // than losing the visitor's message.
+        self._discardLiveBubble(live);
+        live = null;
+        data = await apiRequest("/" + AGENT_ID + "/message", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      }
+      // The streamed text was a preview; the server's stored message is
+      // what gets rendered, so ids, timestamps and quick replies are right.
+      this._discardLiveBubble(live);
       this.conversationStatus = data.conversation_status;
       data.messages.forEach(this._renderMessage.bind(this));
     } catch (e) {
+      this._discardLiveBubble(live);
       this._renderError("Message failed to send. Please try again.");
     } finally {
       this._removeTyping(typingEl);

@@ -14,6 +14,7 @@ Sales/Support/Reporting menu and its own lighter name/email/phone
 collection, implicit in which of visitor.name/email/phone are still NULL.
 """
 
+import logging
 import secrets
 import uuid
 from datetime import datetime, timezone
@@ -28,6 +29,8 @@ from app.models.enums import ConversationStatus, LeadSource, MessageSender, Smsc
 from app.services import lead_detection, rag_service, sales_flow_service, smsc_ai_service, smsc_service
 from app.services.handoff_service import request_handoff
 from app.services.lead_service import create_or_get_lead
+
+logger = logging.getLogger("app.conversation")
 
 _OPEN_STATUSES = (ConversationStatus.AI_ACTIVE, ConversationStatus.WAITING_FOR_AGENT, ConversationStatus.HUMAN_ACTIVE)
 
@@ -462,9 +465,16 @@ async def handle_visitor_message(
         return reply_messages
 
     history = await _recent_history(db, conversation.id)
-    reply_text, chunks_used = await rag_service.generate_reply(
-        db, agent=agent, branding=branding, visitor_message=text, history=history
-    )
+    try:
+        reply_text, chunks_used = await rag_service.generate_reply(
+            db, agent=agent, branding=branding, visitor_message=text, history=history
+        )
+    except Exception:
+        # An upstream LLM failure must not propagate: the route commits
+        # after this call, so a 500 here would roll back the visitor's own
+        # message along with the reply, losing it from the transcript.
+        logger.exception("RAG reply generation failed for conversation %s", conversation.id)
+        reply_text, chunks_used = rag_service.NO_ANSWER_FALLBACK, []
 
     if reply_text == rag_service.NO_ANSWER_FALLBACK:
         offer_msg = Message(
@@ -686,7 +696,7 @@ async def _handle_smsc_message(
     return None
 
 
-async def _recent_history(db: AsyncSession, conversation_id: uuid.UUID, limit: int = 10) -> list[tuple[str, str]]:
+async def _recent_history(db: AsyncSession, conversation_id: uuid.UUID, limit: int = 12) -> list[tuple[str, str]]:
     result = await db.execute(
         select(Message)
         .where(Message.conversation_id == conversation_id)

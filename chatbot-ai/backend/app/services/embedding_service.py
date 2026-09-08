@@ -1,13 +1,11 @@
-from functools import lru_cache
-
 from openai import AsyncOpenAI
 
+from app.core import llm
 from app.core.config import settings
 
 
-@lru_cache
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(api_key=settings.OPENAI_API_KEY, base_url=settings.OPENAI_BASE_URL)
+    return llm.client()
 
 
 async def embed_texts(texts: list[str]) -> list[list[float]]:

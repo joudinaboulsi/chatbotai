@@ -3,12 +3,17 @@ router must never expose anything beyond what a visitor should see — no
 admin fields, no other visitors' data, no internal IDs beyond the
 conversation/visitor the caller's own session_token already grants them."""
 
+import asyncio
+import json
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core import llm
 from app.core.config import settings
 from app.core.db import get_db
 from app.core.rate_limit import limiter
@@ -169,6 +174,79 @@ async def send_message(
     return SendMessageResponse(
         conversation_status=conversation.status,
         messages=[MessageOut.model_validate(m) for m in reply_messages],
+    )
+
+
+logger = logging.getLogger("app.widget")
+
+
+def _sse(event: str, data: dict) -> str:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+
+@router.post("/{agent_id}/message/stream")
+@limiter.limit(_widget_rate)
+async def send_message_stream(
+    agent_id: uuid.UUID, request: Request, body: SendMessageRequest, db: AsyncSession = Depends(get_db)
+):
+    """Server-sent-events twin of send_message.
+
+    Runs the exact same conversation pipeline — no duplicated routing, no
+    second state machine. A token sink is installed for the duration of
+    the turn; the services push prose through it as it arrives and stay
+    unaware that anyone is listening. The final `done` event carries the
+    identical payload the non-streaming endpoint returns, so a client that
+    ignores `token` events still behaves correctly.
+    """
+
+    agent, branding = await _get_active_agent_and_branding(db, agent_id)
+    visitor = await _get_visitor_or_404(db, agent_id, body.session_token)
+    conversation, _ = await conversation_service.get_or_create_conversation(db, agent=agent, visitor=visitor)
+    locale = _detect_locale(request)
+
+    queue: asyncio.Queue = asyncio.Queue()
+
+    async def sink(piece: str) -> None:
+        await queue.put(("token", {"text": piece}))
+
+    async def run_turn() -> None:
+        try:
+            llm.set_token_sink(sink)
+            reply_messages = await conversation_service.handle_visitor_message(
+                db, agent=agent, branding=branding, conversation=conversation,
+                visitor=visitor, text=body.message, quick_reply=body.quick_reply, locale=locale,
+            )
+            await db.commit()
+            await queue.put(("done", {
+                "conversation_status": conversation.status.value,
+                "messages": [json.loads(MessageOut.model_validate(m).model_dump_json()) for m in reply_messages],
+            }))
+        except Exception:
+            logger.exception("Streaming turn failed for conversation %s", conversation.id)
+            await db.rollback()
+            await queue.put(("error", {"detail": "Internal server error"}))
+        finally:
+            llm.set_token_sink(None)
+            await queue.put(None)
+
+    async def events():
+        # contextvars are copied into the task at creation, so the sink set
+        # inside run_turn is visible to everything it awaits.
+        task = asyncio.create_task(run_turn())
+        try:
+            while True:
+                item = await queue.get()
+                if item is None:
+                    break
+                event, data = item
+                yield _sse(event, data)
+        finally:
+            await task
+
+    return StreamingResponse(
+        events(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "Connection": "keep-alive"},
     )
 
 

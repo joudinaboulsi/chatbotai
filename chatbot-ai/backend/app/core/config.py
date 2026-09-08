@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = ""
     OPENAI_BASE_URL: str | None = None
     OPENAI_CHAT_MODEL: str = "gpt-4o-mini"
+    # Tool-calling paths only; falls back to OPENAI_CHAT_MODEL when unset.
+    OPENAI_TOOL_MODEL: str = ""
+    OPENAI_REQUEST_TIMEOUT: float = 60.0
+    OPENAI_HISTORY_TURNS: int = 4
     OPENAI_EMBEDDING_MODEL: str = "text-embedding-3-small"
     OPENAI_EMBEDDING_DIMENSIONS: int = 1536
 
