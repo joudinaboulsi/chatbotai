@@ -1,6 +1,7 @@
 export type UserRole = 'super_admin' | 'admin' | 'support_agent'
 export type UserStatus = 'active' | 'inactive'
 export type AgentStatus = 'active' | 'inactive'
+export type AgentChannel = 'web' | 'whatsapp'
 export type WidgetPosition = 'bottom_right' | 'bottom_left'
 export type WidgetSize = 'standard' | 'compact' | 'large'
 export type ProcessingStatus = 'pending' | 'processing' | 'completed' | 'failed'
@@ -16,6 +17,7 @@ export type LeadSource =
   | 'service_inquiry'
   | 'contact_sales_request'
   | 'human_support_request'
+  | 'visitor_identified'
   | 'manual'
 export type LiveAgentRequestStatus = 'waiting' | 'assigned' | 'active' | 'resolved' | 'closed'
 export type NotificationType =
@@ -45,6 +47,7 @@ export interface Agent {
   remarks: string | null
   languages: string[]
   status: AgentStatus
+  channel: AgentChannel
   notification_email: string | null
   created_at: string
   updated_at: string
@@ -124,6 +127,13 @@ export interface ConversationListItem {
   assigned_operator_id: string | null
   started_at: string
   last_message_at: string | null
+  message_count: number
+  last_message_preview: string | null
+  archived_at: string | null
+}
+
+export interface PaginatedConversations extends Paginated<ConversationListItem> {
+  status_counts: Record<ConversationStatus, number>
 }
 
 export interface Message {
@@ -153,6 +163,11 @@ export interface Lead {
   assigned_operator_id: string | null
   notes: string | null
   created_at: string
+  archived_at: string | null
+}
+
+export interface PaginatedLeads extends Paginated<Lead> {
+  status_counts: Record<LeadStatus, number>
 }
 
 export interface LiveAgentRequest {

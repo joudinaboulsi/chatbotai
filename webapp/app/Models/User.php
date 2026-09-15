@@ -64,6 +64,11 @@ class User extends Authenticatable
         return $this->password_hash;
     }
 
+    public function getAuthPasswordName(): string
+    {
+        return 'password_hash';
+    }
+
     public function getRememberTokenName(): string
     {
         return '';
@@ -110,21 +115,25 @@ class User extends Authenticatable
     }
 
     /**
-     * The demo's three toggleable services (spec section 4): 'smpp', 'api',
-     * 'hlr', each with its own enabled flag and tps limit in user_services.
+     * `$service` is a Service.slug (see App\Models\Service) — 'smpp',
+     * 'api', 'hlr', or any of the standalone apps/tools in the catalog.
      * There is no separate "web" service — the web dashboard is the
      * always-available interface for an active user, not a gated one.
      */
     public function hasServiceEnabled(string $service): bool
     {
-        return (bool) $this->services
-            ->firstWhere('service', strtolower($service))
+        return (bool) $this->services()
+            ->whereHas('service', fn ($query) => $query->where('slug', strtolower($service)))
+            ->first()
             ?->enabled;
     }
 
     public function serviceTps(string $service): ?int
     {
-        return $this->services->firstWhere('service', strtolower($service))?->tps;
+        return $this->services()
+            ->whereHas('service', fn ($query) => $query->where('slug', strtolower($service)))
+            ->first()
+            ?->tps;
     }
 
     /**

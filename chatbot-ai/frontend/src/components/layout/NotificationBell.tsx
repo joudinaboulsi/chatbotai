@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Bell } from 'lucide-react'
+import { Bell, X } from 'lucide-react'
 import { notificationsApi } from '../../api/resources'
 import { getAccessToken } from '../../api/client'
 import type { NotificationOut } from '../../api/types'
@@ -83,6 +83,25 @@ export function NotificationBell() {
     if (n.link) navigate(n.link)
   }
 
+  async function handleClear(e: MouseEvent, id: string) {
+    e.stopPropagation()
+    setNotifications((prev) => prev.filter((n) => n.id !== id))
+    try {
+      await notificationsApi.clear(id)
+    } catch {
+      load()
+    }
+  }
+
+  async function handleClearAll() {
+    setNotifications([])
+    try {
+      await notificationsApi.clearAll()
+    } catch {
+      load()
+    }
+  }
+
   return (
     <div className="relative" ref={ref}>
       <button
@@ -101,34 +120,53 @@ export function NotificationBell() {
         <div className="absolute right-0 z-40 mt-2 w-80 rounded-xl border border-slate-200 bg-white shadow-lg shadow-ink-950/10">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <span className="text-sm font-semibold text-slate-900">Notifications</span>
-            {unreadCount > 0 && (
-              <button
-                className="text-xs font-medium text-brand-600 hover:underline"
-                onClick={async () => {
-                  await notificationsApi.markAllRead()
-                  setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
-                }}
-              >
-                Mark all read
-              </button>
-            )}
+            <div className="flex items-center gap-3">
+              {unreadCount > 0 && (
+                <button
+                  className="text-xs font-medium text-brand-600 hover:underline"
+                  onClick={async () => {
+                    await notificationsApi.markAllRead()
+                    setNotifications((prev) => prev.map((n) => ({ ...n, is_read: true })))
+                  }}
+                >
+                  Mark all read
+                </button>
+              )}
+              {notifications.length > 0 && (
+                <button className="text-xs font-medium text-slate-500 hover:underline" onClick={handleClearAll}>
+                  Clear all
+                </button>
+              )}
+            </div>
           </div>
           <div className="max-h-96 overflow-y-auto">
             {notifications.length === 0 && (
               <p className="px-4 py-6 text-center text-sm text-slate-500">No notifications yet</p>
             )}
             {notifications.map((n) => (
-              <button
+              <div
                 key={n.id}
+                role="button"
+                tabIndex={0}
                 onClick={() => handleClick(n)}
-                className={`block w-full border-b border-slate-50 px-4 py-3 text-left text-sm hover:bg-slate-50 ${
+                onKeyDown={(e) => e.key === 'Enter' && handleClick(n)}
+                className={`group flex w-full items-start gap-2 border-b border-slate-50 px-4 py-3 text-left text-sm hover:bg-slate-50 ${
                   n.is_read ? 'opacity-60' : ''
                 }`}
               >
-                <p className="font-medium text-slate-900">{n.title}</p>
-                {n.body && <p className="mt-0.5 text-xs text-slate-500">{n.body}</p>}
-                <p className="mt-1 text-[11px] text-slate-400">{new Date(n.created_at).toLocaleString()}</p>
-              </button>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium text-slate-900">{n.title}</p>
+                  {n.body && <p className="mt-0.5 text-xs text-slate-500">{n.body}</p>}
+                  <p className="mt-1 text-[11px] text-slate-400">{new Date(n.created_at).toLocaleString()}</p>
+                </div>
+                <button
+                  onClick={(e) => handleClear(e, n.id)}
+                  className="shrink-0 rounded p-1 text-slate-300 opacity-0 transition-opacity hover:bg-slate-200 hover:text-slate-600 group-hover:opacity-100"
+                  aria-label="Clear notification"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         </div>

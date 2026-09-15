@@ -9,7 +9,6 @@ import {
   CalendarDays,
   CalendarRange,
   CalendarCheck,
-  Headphones,
   type LucideIcon,
 } from 'lucide-react'
 import { dashboardApi } from '../api/resources'
@@ -84,7 +83,6 @@ export function DashboardPage() {
         <StatCard label="Leads Today" value={stats.leads_today} icon={CalendarDays} tint="bg-accent-100 text-accent-700" />
         <StatCard label="Leads This Week" value={stats.leads_this_week} icon={CalendarRange} tint="bg-accent-100 text-accent-700" />
         <StatCard label="Leads This Month" value={stats.leads_this_month} icon={CalendarCheck} tint="bg-accent-100 text-accent-700" />
-        <StatCard label="Live Agent Requests Waiting" value={stats.live_agent_requests_waiting} icon={Headphones} tint="bg-amber-100 text-amber-700" />
       </div>
 
       <div className="grid gap-4 md:grid-cols-2">

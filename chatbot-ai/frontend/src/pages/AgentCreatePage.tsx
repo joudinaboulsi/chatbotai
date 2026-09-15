@@ -21,6 +21,7 @@ const EMPTY_FORM: AgentBasicFormValue = {
 export function AgentCreatePage() {
   const navigate = useNavigate()
   const [form, setForm] = useState(EMPTY_FORM)
+  const [channel, setChannel] = useState<'web' | 'whatsapp'>('web')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null)
@@ -42,6 +43,7 @@ export function AgentCreatePage() {
         remarks: form.remarks || undefined,
         languages: form.languageRestriction === 'specific' ? form.restrictedLanguages : [],
         notification_email: form.notificationEmail || undefined,
+        channel,
       })
       await agentsApi.updateBranding(agent.id, { display_agent_name: form.displayName })
       const { data } = await agentsApi.embedCode(agent.id)
@@ -68,6 +70,37 @@ export function AgentCreatePage() {
       {error && <ErrorBanner message={error} />}
 
       <div className="max-w-2xl space-y-4 rounded-2xl border border-slate-200 bg-white p-5">
+        <div>
+          <span className="mb-1 block text-sm font-medium text-slate-700">Channel</span>
+          <p className="mb-2 text-xs text-slate-400">
+            Which surface this agent talks to visitors on. Set once at creation, can't be changed later.
+          </p>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setChannel('web')}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                channel === 'web'
+                  ? 'border-brand-500 bg-brand-50 text-brand-700'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              Web Widget
+            </button>
+            <button
+              type="button"
+              onClick={() => setChannel('whatsapp')}
+              className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                channel === 'whatsapp'
+                  ? 'border-emerald-500 bg-emerald-50 text-emerald-700'
+                  : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+              }`}
+            >
+              WhatsApp
+            </button>
+          </div>
+        </div>
+
         <AgentBasicForm value={form} onChange={setForm} />
 
         <div className="flex gap-2">

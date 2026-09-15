@@ -6,7 +6,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.db import Base
 from app.models.base import TimestampMixin, UUIDPKMixin, pg_enum
-from app.models.enums import AgentStatus, WidgetPosition, WidgetSize
+from app.models.enums import AgentChannel, AgentStatus, WidgetPosition, WidgetSize
 
 
 class Agent(Base, UUIDPKMixin, TimestampMixin):
@@ -20,6 +20,9 @@ class Agent(Base, UUIDPKMixin, TimestampMixin):
     languages: Mapped[list[str]] = mapped_column(ARRAY(String), default=list)
     status: Mapped[AgentStatus] = mapped_column(
         pg_enum(AgentStatus, "active_status"), default=AgentStatus.ACTIVE, nullable=False
+    )
+    channel: Mapped[AgentChannel] = mapped_column(
+        pg_enum(AgentChannel, "agent_channel"), default=AgentChannel.WEB, nullable=False
     )
     notification_email: Mapped[str | None] = mapped_column(String(255))
     created_by: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), ForeignKey("users.id"))

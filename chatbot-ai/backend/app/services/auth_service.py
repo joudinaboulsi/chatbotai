@@ -5,7 +5,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.core.security import create_access_token, create_refresh_token, verify_password
+from app.core.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.models.enums import UserRole, UserStatus
 from app.models.user import User
 from app.schemas.auth import TokenPair, UserOut
@@ -46,6 +46,23 @@ def issue_tokens(user: User) -> TokenPair:
         access_token=create_access_token(str(user.id), user.role.name),
         refresh_token=create_refresh_token(str(user.id)),
     )
+
+
+class PasswordChangeError(Exception):
+    """Raised when the supplied current_password doesn't match."""
+
+
+async def update_profile(db: AsyncSession, user: User, *, name: str) -> User:
+    user.name = name
+    await db.flush()
+    return user
+
+
+async def change_password(db: AsyncSession, user: User, *, current_password: str, new_password: str) -> None:
+    if not verify_password(current_password, user.password_hash):
+        raise PasswordChangeError("Current password is incorrect")
+    user.password_hash = hash_password(new_password)
+    await db.flush()
 
 
 def to_user_out(user: User) -> UserOut:

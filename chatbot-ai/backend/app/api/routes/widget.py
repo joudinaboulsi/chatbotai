@@ -15,11 +15,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core import llm
 from app.core.config import settings
-from app.core.db import get_db
+from app.core.db import AsyncSessionLocal, get_db
 from app.core.rate_limit import limiter
 from app.models.agent import Agent, AgentBranding
 from app.models.conversation import Conversation, Message, Visitor
-from app.models.enums import AgentStatus, ConversationStatus, LeadSource
+from app.models.enums import AgentStatus, ConversationStatus, LeadSource, SmscSessionStatus
 from app.schemas.widget import (
     HandoffRequest,
     LeadRequest,
@@ -63,10 +63,15 @@ async def _get_visitor_or_404(db: AsyncSession, agent_id: uuid.UUID, session_tok
     return visitor
 
 
-def _detect_locale(request: Request) -> str:
-    """Arabic if the browser's Accept-Language says so, English otherwise.
-    Every fetch() from the widget already sends this header automatically
-    — no widget.js change needed for the backend side of this."""
+def _detect_locale(request: Request, text: str | None = None) -> str:
+    """Arabic if the visitor's own message contains Arabic script; otherwise
+    the browser's Accept-Language header. Visitors frequently type Arabic
+    on an English-locale browser/OS, so message content — when available —
+    takes priority over the header. Every fetch() from the widget already
+    sends Accept-Language automatically — no widget.js change needed for
+    the header-only fallback."""
+    if text and any("؀" <= ch <= "ۿ" for ch in text):
+        return "ar"
     header = (request.headers.get("accept-language") or "").strip().lower()
     primary = header.split(",")[0].split(";")[0].split("-")[0].strip()
     return "ar" if primary == "ar" else "en"
@@ -111,20 +116,51 @@ async def create_session(
     )
     conversation, is_new = await conversation_service.get_or_create_conversation(db, agent=agent, visitor=visitor)
 
+    identified_name: str | None = None
+    is_support_login = False
+    if body.login_token:
+        # Resolve *before* deciding which conversation this belongs to —
+        # the token is single-use, so identity has to be known first, not
+        # after. A visitor's browser can carry a stale session_token from a
+        # previous, different logged-in account (localStorage persists
+        # across dashboard logins) — reusing that conversation would keep
+        # answering with the *old* account's data (balance, sender ids,
+        # etc.) even though a different, real person is behind this fresh
+        # login_token now. If the reused conversation's existing identity
+        # doesn't match, abandon it and start clean rather than silently
+        # trusting the browser's stale session_token over the dashboard's
+        # own, just-issued proof of who's actually logged in.
+        resolved = await smsc_service.resolve_widget_login_token(
+            db, conversation_id=conversation.id, login_token=body.login_token
+        )
+        if resolved:
+            smsc_user_id, resolved_username, resolved_role = resolved
+
+            if not is_new:
+                existing_session = await smsc_service.get_session(db, conversation.id)
+                prior_username = (
+                    existing_session.username
+                    if existing_session and existing_session.status == SmscSessionStatus.AUTHENTICATED
+                    else None
+                )
+                if prior_username is not None and prior_username != resolved_username:
+                    conversation.status = ConversationStatus.CLOSED
+                    await db.flush()
+                    conversation, is_new = await conversation_service.get_or_create_conversation(
+                        db, agent=agent, visitor=visitor
+                    )
+
+            await smsc_service.authenticate_session_identity(
+                db, conversation_id=conversation.id, visitor_id=visitor.id,
+                smsc_user_id=smsc_user_id, username=resolved_username, role=resolved_role,
+            )
+            identified_name = resolved_username
+            if visitor.name is None or visitor.name != resolved_username:
+                visitor.name = resolved_username
+            is_support_login = resolved_role == "support"
+
     initial_messages: list[Message] = []
     if is_new:
-        identified_name: str | None = None
-        is_support_login = False
-        if body.login_token:
-            identified = await smsc_service.identify_from_widget_login_token(
-                db, conversation_id=conversation.id, visitor_id=visitor.id, login_token=body.login_token
-            )
-            if identified:
-                identified_name, role = identified
-                if visitor.name is None:
-                    visitor.name = identified_name
-                is_support_login = role == "support"
-
         greeting = await conversation_service.build_greeting_message(
             db,
             conversation=conversation,
@@ -167,7 +203,7 @@ async def send_message(
         visitor=visitor,
         text=body.message,
         quick_reply=body.quick_reply,
-        locale=_detect_locale(request),
+        locale=_detect_locale(request, body.message),
     )
     await db.commit()
 
@@ -197,12 +233,33 @@ async def send_message_stream(
     unaware that anyone is listening. The final `done` event carries the
     identical payload the non-streaming endpoint returns, so a client that
     ignores `token` events still behaves correctly.
+
+    The actual turn runs on its OWN dedicated session (opened inside
+    run_turn, not the route's `Depends(get_db)` session) rather than
+    sharing the request-scoped one across the asyncio.create_task
+    boundary. The request-scoped `db` here is only ever used for the
+    quick, read-only lookups below, before the task is created — never
+    inside run_turn. This was found empirically: reusing the outer `db`
+    from within the background task, committed there, silently failed to
+    persist ORM attribute changes (e.g. visitor.name) even though the
+    commit call itself returned without error and even created rows that
+    read that same attribute (e.g. a Lead row correctly got the visitor's
+    name) — some interaction specific to FastAPI/Starlette's dependency
+    lifecycle for StreamingResponse, not reproducible by calling the same
+    service functions directly in-process. Giving the turn its own
+    session (mirroring what the non-streaming endpoint effectively gets
+    from its own request-scoped dependency, which never showed this bug)
+    sidesteps it regardless of the exact underlying cause.
     """
 
     agent, branding = await _get_active_agent_and_branding(db, agent_id)
     visitor = await _get_visitor_or_404(db, agent_id, body.session_token)
     conversation, _ = await conversation_service.get_or_create_conversation(db, agent=agent, visitor=visitor)
-    locale = _detect_locale(request)
+    locale = _detect_locale(request, body.message)
+
+    agent_id_value = agent.id
+    visitor_id = visitor.id
+    conversation_id = conversation.id
 
     queue: asyncio.Queue = asyncio.Queue()
 
@@ -212,18 +269,25 @@ async def send_message_stream(
     async def run_turn() -> None:
         try:
             llm.set_token_sink(sink)
-            reply_messages = await conversation_service.handle_visitor_message(
-                db, agent=agent, branding=branding, conversation=conversation,
-                visitor=visitor, text=body.message, quick_reply=body.quick_reply, locale=locale,
-            )
-            await db.commit()
+            async with AsyncSessionLocal() as turn_db:
+                turn_agent, turn_branding = await _get_active_agent_and_branding(turn_db, agent_id_value)
+                turn_visitor = await turn_db.get(Visitor, visitor_id)
+                turn_conversation = await turn_db.get(Conversation, conversation_id)
+                reply_messages = await conversation_service.handle_visitor_message(
+                    turn_db, agent=turn_agent, branding=turn_branding, conversation=turn_conversation,
+                    visitor=turn_visitor, text=body.message, quick_reply=body.quick_reply, locale=locale,
+                )
+                await turn_db.commit()
+                status_value = turn_conversation.status.value
+                messages_payload = [
+                    json.loads(MessageOut.model_validate(m).model_dump_json()) for m in reply_messages
+                ]
             await queue.put(("done", {
-                "conversation_status": conversation.status.value,
-                "messages": [json.loads(MessageOut.model_validate(m).model_dump_json()) for m in reply_messages],
+                "conversation_status": status_value,
+                "messages": messages_payload,
             }))
         except Exception:
-            logger.exception("Streaming turn failed for conversation %s", conversation.id)
-            await db.rollback()
+            logger.exception("Streaming turn failed for conversation %s", conversation_id)
             await queue.put(("error", {"detail": "Internal server error"}))
         finally:
             llm.set_token_sink(None)

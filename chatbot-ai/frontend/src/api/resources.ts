@@ -1,6 +1,7 @@
 import { apiClient } from './client'
 import type {
   Agent,
+  AgentChannel,
   AgentStatus,
   AuditLogEntry,
   Branding,
@@ -20,6 +21,8 @@ import type {
   NotificationOut,
   Operator,
   Paginated,
+  PaginatedConversations,
+  PaginatedLeads,
   ScrapedSite,
   ScrapeMode,
   SMSCSettings,
@@ -33,6 +36,9 @@ export const authApi = {
   login: (email: string, password: string) => apiClient.post('/auth/login', { email, password }),
   me: () => apiClient.get<UserOut>('/auth/me'),
   logout: (refresh_token: string) => apiClient.post('/auth/logout', { refresh_token }),
+  updateProfile: (name: string) => apiClient.put<UserOut>('/auth/me', { name }),
+  changePassword: (current_password: string, new_password: string) =>
+    apiClient.post('/auth/me/change-password', { current_password, new_password }),
 }
 
 // --- Agents ---
@@ -44,6 +50,7 @@ export interface AgentCreateInput {
   remarks?: string
   languages?: string[]
   notification_email?: string
+  channel?: AgentChannel
 }
 
 export const agentsApi = {
@@ -110,22 +117,38 @@ export const knowledgeApi = {
 
 // --- Conversations ---
 export const conversationsApi = {
-  list: (params: { agent_id?: string; status?: ConversationStatus; page?: number; page_size?: number }) =>
-    apiClient.get<Paginated<ConversationListItem>>('/conversations', { params }),
+  list: (params: {
+    agent_id?: string
+    status?: ConversationStatus
+    has_lead?: boolean
+    archived?: boolean
+    sort?: 'newest' | 'oldest' | 'most_messages'
+    page?: number
+    page_size?: number
+  }) => apiClient.get<PaginatedConversations>('/conversations', { params }),
   get: (id: string) => apiClient.get<ConversationDetail>(`/conversations/${id}`),
   sendMessage: (id: string, content: string) => apiClient.post<Message>(`/conversations/${id}/messages`, { content }),
   resolve: (id: string) => apiClient.post<ConversationListItem>(`/conversations/${id}/resolve`),
   close: (id: string) => apiClient.post<ConversationListItem>(`/conversations/${id}/close`),
   assign: (id: string) => apiClient.post<ConversationListItem>(`/conversations/${id}/assign`),
+  archive: (id: string) => apiClient.post<ConversationListItem>(`/conversations/${id}/archive`),
+  unarchive: (id: string) => apiClient.post<ConversationListItem>(`/conversations/${id}/unarchive`),
+  remove: (id: string) => apiClient.delete(`/conversations/${id}`),
+  whatsappReply: (id: string, text: string) =>
+    apiClient.post<ConversationDetail>(`/conversations/${id}/whatsapp-reply`, { text }),
 }
 
 // --- Leads ---
 export const leadsApi = {
-  list: (params: { agent_id?: string; status?: LeadStatus; page?: number; page_size?: number }) =>
-    apiClient.get<Paginated<Lead>>('/leads', { params }),
+  list: (params: { agent_id?: string; status?: LeadStatus; archived?: boolean; page?: number; page_size?: number }) =>
+    apiClient.get<PaginatedLeads>('/leads', { params }),
   get: (id: string) => apiClient.get<Lead>(`/leads/${id}`),
   update: (id: string, data: Partial<Pick<Lead, 'status' | 'assigned_operator_id' | 'notes' | 'company'>>) =>
     apiClient.put<Lead>(`/leads/${id}`, data),
+  archive: (id: string) => apiClient.post<Lead>(`/leads/${id}/archive`),
+  unarchive: (id: string) => apiClient.post<Lead>(`/leads/${id}/unarchive`),
+  remove: (id: string) => apiClient.delete(`/leads/${id}`),
+  startWhatsapp: (id: string) => apiClient.post<ConversationDetail>(`/leads/${id}/whatsapp/start`),
 }
 
 // --- Live Agents ---
@@ -159,6 +182,8 @@ export const notificationsApi = {
   list: (unreadOnly = false) => apiClient.get<NotificationOut[]>('/notifications', { params: { unread_only: unreadOnly } }),
   markRead: (id: string) => apiClient.post<NotificationOut>(`/notifications/${id}/read`),
   markAllRead: () => apiClient.post('/notifications/read-all'),
+  clear: (id: string) => apiClient.delete(`/notifications/${id}`),
+  clearAll: () => apiClient.delete('/notifications'),
 }
 
 // --- Settings ---

@@ -1,10 +1,16 @@
 <?php
 
 use App\Http\Controllers\ProfileController;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    $services = DB::table('services')
+        ->orderByRaw("field(category, 'messaging', 'tool')")
+        ->orderBy('name')
+        ->get(['name', 'description']);
+
+    return view('welcome', ['services' => $services]);
 });
 
 Route::get('/dashboard', function () {

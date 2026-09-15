@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Outlet } from 'react-router-dom'
+import { Link, Outlet } from 'react-router-dom'
 import { Menu, LogOut } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { Sidebar } from './Sidebar'
@@ -37,10 +37,10 @@ export function AppLayout() {
           <div className="flex items-center gap-3">
             <NotificationBell />
             <div className="h-6 w-px bg-slate-200" />
-            <div className="text-right">
+            <Link to="/profile" className="text-right transition-opacity hover:opacity-70">
               <p className="text-sm font-medium text-slate-900">{user?.name}</p>
               <p className="text-xs capitalize text-slate-500">{user?.role.replace('_', ' ')}</p>
-            </div>
+            </Link>
             <button
               onClick={logout}
               className="flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-medium text-slate-500 hover:bg-slate-100"

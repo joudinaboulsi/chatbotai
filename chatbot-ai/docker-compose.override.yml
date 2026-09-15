@@ -1,0 +1,11 @@
+# Local-machine override (not for prod). docker compose loads this
+# automatically alongside docker-compose.yml.
+#
+# backend: uvicorn --reload's file watcher (watchfiles) throws
+# "WatchfilesRustInternalError: ... Input/output error (os error 5)" and
+# crashes the container when watching a Docker Desktop bind mount on
+# Windows. Forcing polling mode avoids the native watcher entirely.
+services:
+  backend:
+    environment:
+      WATCHFILES_FORCE_POLLING: "true"

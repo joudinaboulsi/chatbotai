@@ -27,6 +27,9 @@ class ConversationListItem(BaseModel):
     assigned_operator_id: uuid.UUID | None
     started_at: datetime
     last_message_at: datetime | None
+    message_count: int
+    last_message_preview: str | None
+    archived_at: datetime | None
 
 
 class ConversationDetail(ConversationListItem):
@@ -38,7 +41,16 @@ class PaginatedConversations(BaseModel):
     total: int
     page: int
     page_size: int
+    # Counts per status across the whole (role/agent-scoped) conversation
+    # set, ignoring the current status/has_lead/search filters — this is
+    # what drives the tab and stat-card counts, which should stay stable
+    # as the user filters rather than shrinking to match the active view.
+    status_counts: dict[str, int]
 
 
 class SendOperatorMessageRequest(BaseModel):
     content: str
+
+
+class WhatsAppReplyRequest(BaseModel):
+    text: str

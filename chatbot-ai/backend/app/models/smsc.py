@@ -13,9 +13,10 @@ from app.models.enums import SmscSessionStatus
 class SmscSession(Base, UUIDPKMixin, TimestampMixin):
     """Links one chat conversation to a validated SMSC account.
 
-    Created in PENDING status the moment a visitor asks something
-    account-specific; becomes AUTHENTICATED only after `username` is
-    validated against the SMSC API (see app.services.smsc_service). The
+    Only ever becomes AUTHENTICATED via a real login on the website, which
+    hands the widget a signed login_token that smsc_service.
+    identify_from_widget_login_token exchanges for identity — never from a
+    username typed in chat, which proves nothing about who's typing. The
     conversation's AI turn always resolves the caller's SMSC identity from
     this row — never from anything the visitor types once authenticated —
     so a crafted message can't switch the effective account mid-session.
@@ -40,10 +41,14 @@ class SmscSession(Base, UUIDPKMixin, TimestampMixin):
     status: Mapped[SmscSessionStatus] = mapped_column(
         pg_enum(SmscSessionStatus, "smsc_session_status"), default=SmscSessionStatus.PENDING, nullable=False
     )
-    # The account-specific question that triggered the PENDING state, so it
-    # can be answered immediately once the username validates instead of
-    # making the visitor repeat themselves.
+    # Vestigial: only ever set to "" (by authenticate_session_identity) and
+    # immediately cleared. Left over from a removed in-chat "type your
+    # username" flow that used it to resume the visitor's original
+    # question after validating; kept as a column rather than migrated out
+    # since nothing writes a real value into it anymore.
     pending_question: Mapped[str | None] = mapped_column(Text)
+    # Vestigial for the same reason as pending_question — nothing
+    # increments this anymore now that username-only chat auth is gone.
     failed_attempts: Mapped[int] = mapped_column(Integer, default=0)
     authenticated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))

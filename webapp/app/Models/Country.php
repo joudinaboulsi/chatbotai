@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 
 class Country extends Model
 {
@@ -19,6 +20,21 @@ class Country extends Model
     public function senderIdCountries(): HasMany
     {
         return $this->hasMany(SenderIdCountry::class);
+    }
+
+    public function operators(): HasMany
+    {
+        return $this->hasMany(Operator::class);
+    }
+
+    public function routes(): HasMany
+    {
+        return $this->hasMany(Route::class);
+    }
+
+    public function routingRule(): HasOne
+    {
+        return $this->hasOne(RoutingRule::class);
     }
 
     public function scopeActive($query)

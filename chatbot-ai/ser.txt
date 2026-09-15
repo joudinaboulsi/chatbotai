@@ -1,0 +1,61 @@
+services: as product ()
+SMPP 
+Http API hlr lookup - ams - easypaperless - landing page - survay -  VLanding Page
+Landing Page
+Apps & Tools
+Excel Add-on
+Excel Add-on
+Apps & Tools
+EasyPaperLess
+EasyPaperLess
+ 
+Discover the transformative capabilities of each tool within our suite
+Our SMS Tools Suite is rooted in innovation and efficiency, designed to optimize your communication workflows and achieve results. Embrace the future of messaging and unlock new opportunities with our comprehensive tools. Join us in redefining connectivity and elevating your communication strategy.
+
+Email to SMS
+Email to SMS
+Integrate SMS with email effortlessly. Send messages directly from your email, blending convenience with connectivity.
+
+EasyPaperless
+EasyPaperless
+Transform document sharing with SMS-powered digital distribution. Go paperless, save the Earth, and embrace efficiency with secure, instant access to documents via links. Features include digital signatures and a suite of options to streamline operations, all while reducing your environmental footprint.
+
+Excel Addon
+Excel Addon
+Supercharge SMS campaigns directly from Excel . This tool enables automated, personalized messaging and custom messages, reducing manual input and elevating engagement. Seamlessly send SMS to connect with your audience in a more meaningful way.
+
+Survey
+Survey
+Amplify engagement with our intuitive, free survey builder and dynamic landing pages. Craft and deploy surveys effortlessly, enhancing your campaigns with strategic SMS distribution and insightful analytics. Engage your audience, gather valuable feedback, and make informed decisions—all at no extra cost.
+
+AMS 
+AMS
+AMS is a Windows application that connects to databases like SQL Server and Oracle to read data and generate SMS messages. It allows
+
+
+Choose The Best Plan That’s For You
+SAR 2,550
+Deals
+50,000 SMS
+
+Entering Numbers and Groups Customizing Sender Name for Advertisements Scheduling for Later Detailed Reports Account Manager
+SAR 4,700
+Deals
+100,000 SMS
+
+Entering Numbers and Groups Customizing Sender Name for Advertisements Scheduling for Later Detailed Reports Account Manager
+SAR 11,250
+Deals
+250,000 SMS
+
+Entering Numbers and Groups Customizing Sender Name for Advertisements Scheduling for Later Detailed Reports Account Manager
+SAR 21,000
+Deals
+500,000 SMS
+
+Entering Numbers and Groups Customizing Sender Name for Advertisements Scheduling for Later Detailed Reports Account Manager
+SAR 40,000
+Mega Deals
+1,000,000 SMS
+
+Entering Numbers and Groups Customizing Sender Name for Advertisements Scheduling for Later Detailed Reports Account Manager

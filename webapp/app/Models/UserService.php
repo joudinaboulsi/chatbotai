@@ -7,15 +7,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class UserService extends Model
 {
-    public const SMPP = 'smpp';
-
-    public const API = 'api';
-
-    public const HLR = 'hlr';
-
     protected $fillable = [
         'user_id',
-        'service',
+        'service_id',
         'enabled',
         'tps',
     ];
@@ -28,5 +22,10 @@ class UserService extends Model
     public function user(): BelongsTo
     {
         return $this->belongsTo(User::class);
+    }
+
+    public function service(): BelongsTo
+    {
+        return $this->belongsTo(Service::class);
     }
 }

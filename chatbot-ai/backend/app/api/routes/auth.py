@@ -11,7 +11,7 @@ from app.core.rate_limit import limiter
 from app.core.redis_client import get_redis
 from app.core.security import create_access_token, decode_token
 from app.models.user import User
-from app.schemas.auth import LoginRequest, RefreshRequest, TokenPair, UserOut
+from app.schemas.auth import ChangePasswordRequest, LoginRequest, ProfileUpdate, RefreshRequest, TokenPair, UserOut
 from app.services import auth_service
 from app.services.audit_service import log_action
 
@@ -87,3 +87,33 @@ async def logout(body: RefreshRequest, user: User = Depends(get_current_user)) -
 @router.get("/me", response_model=UserOut)
 async def me(user: User = Depends(get_current_user)) -> UserOut:
     return auth_service.to_user_out(user)
+
+
+@router.put("/me", response_model=UserOut)
+async def update_me(
+    body: ProfileUpdate, user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> UserOut:
+    user = await auth_service.update_profile(db, user, name=body.name)
+    await db.commit()
+    return auth_service.to_user_out(user)
+
+
+@router.post("/me/change-password", status_code=status.HTTP_204_NO_CONTENT)
+async def change_my_password(
+    body: ChangePasswordRequest,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    try:
+        await auth_service.change_password(
+            db, user, current_password=body.current_password, new_password=body.new_password
+        )
+    except auth_service.PasswordChangeError:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Current password is incorrect")
+
+    await log_action(
+        db, user_id=user.id, action="password_changed", resource_type="user", resource_id=user.id,
+        ip_address=request.client.host if request.client else None,
+    )
+    await db.commit()

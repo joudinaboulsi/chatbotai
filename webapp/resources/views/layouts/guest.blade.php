@@ -25,7 +25,7 @@
                     <span class="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-white/10 ring-1 ring-white/20">
                         <x-application-logo class="h-5 w-5 text-white" />
                     </span>
-                    <span class="text-lg font-semibold tracking-tight">SMSC Demo</span>
+                    <span class="text-lg font-semibold tracking-tight">Broadnet SMS</span>
                 </a>
 
                 <div class="relative max-w-sm">
@@ -55,7 +55,7 @@
                     </ul>
                 </div>
 
-                <p class="relative text-xs text-indigo-300">&copy; {{ date('Y') }} SMSC Demo Platform</p>
+                <p class="relative text-xs text-indigo-300">&copy; {{ date('Y') }} Broadnet SMS</p>
             </div>
 
             <!-- Form panel -->
@@ -65,12 +65,15 @@
                         <span class="inline-flex h-9 w-9 items-center justify-center rounded-lg bg-indigo-600">
                             <x-application-logo class="h-5 w-5 text-white" />
                         </span>
-                        <span class="text-lg font-semibold text-gray-900">SMSC Demo</span>
+                        <span class="text-lg font-semibold text-gray-900">Broadnet SMS</span>
                     </div>
 
                     {{ $slot }}
                 </div>
             </div>
         </div>
+
+        <script src="http://localhost:8010/widget.js"
+                data-agent-id="7faddd79-74b5-4626-b461-16987dd7099c"></script>
     </body>
 </html>

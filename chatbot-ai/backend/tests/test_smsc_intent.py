@@ -49,8 +49,14 @@ def test_support_role_gets_message_status_tool_user_role_does_not():
 
     assert "get_smsc_message_status" in support_tools
     assert "get_smsc_message_status" not in user_tools
-    # Support keeps every self-service tool too (e.g. for their own account).
-    assert user_tools <= support_tools
+    # Support has no SMSC account of their own, so none of the self-service
+    # account tools are offered to them — only platform-wide pricing (same
+    # for every account) plus the support-only any-user message lookup.
+    assert "get_smsc_balance" not in support_tools
+    assert "get_smsc_own_message_status" not in support_tools
+    assert "get_smsc_balance" in user_tools
+    assert "get_smsc_pricing" in support_tools
+    assert "get_smsc_pricing" in user_tools
 
 
 def test_system_instructions_include_todays_date_and_role_guidance():

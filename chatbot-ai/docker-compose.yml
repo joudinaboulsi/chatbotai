@@ -10,7 +10,11 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: chatbot
     ports:
-      - "5432:5432"
+      # Host port 5433, not 5432: an unrelated project's Postgres container
+      # already holds 5432 on this box. Internal traffic still uses
+      # postgres:5432 inside the compose network, so this only affects
+      # direct host-side access (e.g. psql/DBeaver from Windows).
+      - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:

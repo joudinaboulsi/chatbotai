@@ -120,8 +120,29 @@ async def get_delivery_stats(
     return body
 
 
+async def get_traffic_breakdown(
+    config: SmscConfig, smsc_user_id: str, *, by: str, date_from: str | None, date_to: str | None
+) -> dict:
+    params = {k: v for k, v in {"by": by, "date_from": date_from, "date_to": date_to}.items() if v}
+    _, body = await _request(config, "GET", f"/users/{smsc_user_id}/traffic/breakdown", params=params)
+    return body
+
+
+async def get_failure_analysis(
+    config: SmscConfig, smsc_user_id: str, *, date_from: str | None, date_to: str | None
+) -> dict:
+    params = {k: v for k, v in {"date_from": date_from, "date_to": date_to}.items() if v}
+    _, body = await _request(config, "GET", f"/users/{smsc_user_id}/failures", params=params)
+    return body
+
+
 async def get_connections(config: SmscConfig, smsc_user_id: str) -> dict:
     _, body = await _request(config, "GET", f"/users/{smsc_user_id}/connections")
+    return body
+
+
+async def get_sender_ids(config: SmscConfig, smsc_user_id: str) -> dict:
+    _, body = await _request(config, "GET", f"/users/{smsc_user_id}/sender-ids")
     return body
 
 
@@ -181,4 +202,13 @@ async def get_packages(config: SmscConfig) -> dict:
     chatbot talks to anonymous prospects who haven't authenticated at
     all, unlike every other call in this module."""
     _, body = await _request(config, "GET", "/packages")
+    return body
+
+
+async def get_services(config: SmscConfig) -> dict:
+    """Platform-wide product/service catalog (same for every prospect).
+    Not user-scoped and not gated behind an SmscSession, same reasoning
+    as get_packages above — backs the Sales menu so it lists every real
+    product instead of a hardcoded subset."""
+    _, body = await _request(config, "GET", "/services")
     return body

@@ -5,23 +5,37 @@ import {
   BookOpen,
   MessagesSquare,
   Target,
-  Headphones,
+  Archive,
   Users,
   Settings,
 } from 'lucide-react'
+import { useAuth } from '../../context/AuthContext'
 
+// Live Agents is still hidden from the nav for now (not in use) — the
+// page and route still exist, just not linked here.
 const NAV_ITEMS = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { to: '/agents', label: 'AI Agents', icon: Bot },
-  { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen },
+  // Every knowledge-bases route (even the plain list) is admin/super-admin
+  // only server-side — a support agent hitting this page gets an
+  // "Insufficient permissions" error on load, not just on Add, so it's
+  // filtered out below rather than just hiding the Add button.
+  { to: '/knowledge-base', label: 'Knowledge Base', icon: BookOpen, adminOnly: true },
   { to: '/conversations', label: 'Conversations', icon: MessagesSquare },
   { to: '/leads', label: 'Leads', icon: Target },
-  { to: '/live-agents', label: 'Live Agents', icon: Headphones },
-  { to: '/operators', label: 'Agent Operators', icon: Users },
+  { to: '/archive', label: 'Archive', icon: Archive },
+  // Users (Operators) is admin/super-admin only server-side (POST/GET
+  // /operators requires those roles) — filtered out below for anyone else
+  // so a support agent never sees a link that just 403s.
+  { to: '/operators', label: 'Users', icon: Users, adminOnly: true },
   { to: '/settings', label: 'Settings', icon: Settings },
 ]
 
 export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'super_admin' || user?.role === 'admin'
+  const items = NAV_ITEMS.filter((item) => !item.adminOnly || isAdmin)
+
   return (
     <nav className="flex h-full w-64 flex-col bg-ink-950 text-slate-300">
       <div className="flex h-16 items-center gap-2.5 px-5">
@@ -43,7 +57,7 @@ export function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       </div>
 
       <div className="flex-1 space-y-0.5 overflow-y-auto px-3 py-3">
-        {NAV_ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon
           return (
             <NavLink

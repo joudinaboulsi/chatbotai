@@ -32,6 +32,10 @@ class SmppAccount extends Model
         'status',
     ];
 
+    // connection_status is deliberately NOT mass-assignable — it's the live
+    // bind state, meant to be written only by whatever process tracks the
+    // real SMPP session (a heartbeat/worker), never by a request handler.
+
     protected $hidden = [
         'password_hash',
     ];

@@ -63,6 +63,7 @@ class Conversation(Base, UUIDPKMixin, TimestampMixin):
     started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.clock_timestamp())
     last_message_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     visitor: Mapped["Visitor"] = relationship(back_populates="conversations")
     messages: Mapped[list["Message"]] = relationship(

@@ -26,6 +26,7 @@ async def create_or_get_lead(
     visitor: Visitor,
     conversation: Conversation,
     source: LeadSource,
+    notes: str | None = None,
 ) -> tuple[Lead, bool]:
     """Returns (lead, created). Idempotent per conversation for the lead
     row itself, but backfills name/email/phone onto an existing lead if
@@ -49,6 +50,9 @@ async def create_or_get_lead(
         if existing.phone is None and visitor.phone is not None:
             existing.phone = visitor.phone
             changed = True
+        if existing.notes is None and notes is not None:
+            existing.notes = notes
+            changed = True
         if not changed:
             return existing, False
         await db.flush()
@@ -70,6 +74,7 @@ async def create_or_get_lead(
         email=visitor.email,
         phone=visitor.phone,
         source=source,
+        notes=notes,
     )
     db.add(lead)
     await db.flush()
@@ -82,44 +87,58 @@ async def create_or_get_lead(
 async def _notify_new_lead(
     db: AsyncSession, *, agent: Agent, visitor: Visitor, conversation: Conversation, source: LeadSource, lead: Lead
 ) -> None:
-    await notify(
-        db,
-        type=NotificationType.NEW_LEAD,
-        title=f"New lead: {visitor.name or 'Unknown visitor'}",
-        body=f"Source: {source.value}",
-        agent_id=agent.id,
-        resource_type="lead",
-        resource_id=lead.id,
-        link=f"/conversations/{conversation.id}",
-    )
-
-    recipient = agent.notification_email
-    if not recipient:
-        settings_row = await email_service.get_settings_row(db)
-        recipient = settings_row.support_email if settings_row else None
-
-    if recipient:
-        try:
-            await email_service.send_email(
-                db,
-                to_email=recipient,
-                subject=f"New {agent.company_name} Chatbot Lead",
-                body_text=(
-                    f"Name: {visitor.name or 'N/A'}\n"
-                    f"Email: {visitor.email or 'N/A'}\n"
-                    f"Phone: {visitor.phone or 'N/A'}\n"
-                    f"Agent: {agent.name}\n"
-                    f"Source: {source.value}\n"
-                    f"Conversation: {conversation.id}\n"
-                ),
-            )
-        except Exception:
-            logger.exception("Failed to send lead notification email for lead %s", lead.id)
+    """Best-effort: wrapped in its own SAVEPOINT (not just try/except) so a
+    failure here (DB enum drift, a transient issue, SMTP problems) can
+    never abort the caller's transaction. create_or_get_lead now runs for
+    every identified visitor, not just explicit buying-intent leads (see
+    sales_ai_service's save_contact_info / VISITOR_IDENTIFIED source), so
+    this is on the hot path of nearly every conversation — a plain
+    try/except wouldn't be enough, since a failed flush leaves the whole
+    Postgres transaction aborted and every later statement (including the
+    route's final commit, which is what actually persists the visitor's
+    message) would fail too."""
+    try:
+        async with db.begin_nested():
             await notify(
                 db,
-                type=NotificationType.EMAIL_FAILED,
-                title="Failed to send lead notification email",
+                type=NotificationType.NEW_LEAD,
+                title=f"New lead: {visitor.name or 'Unknown visitor'}",
+                body=f"Source: {source.value}",
                 agent_id=agent.id,
                 resource_type="lead",
                 resource_id=lead.id,
+                link=f"/conversations/{conversation.id}",
             )
+
+            recipient = agent.notification_email
+            if not recipient:
+                settings_row = await email_service.get_settings_row(db)
+                recipient = settings_row.support_email if settings_row else None
+
+            if recipient:
+                try:
+                    await email_service.send_email(
+                        db,
+                        to_email=recipient,
+                        subject=f"New {agent.company_name} Chatbot Lead",
+                        body_text=(
+                            f"Name: {visitor.name or 'N/A'}\n"
+                            f"Email: {visitor.email or 'N/A'}\n"
+                            f"Phone: {visitor.phone or 'N/A'}\n"
+                            f"Agent: {agent.name}\n"
+                            f"Source: {source.value}\n"
+                            f"Conversation: {conversation.id}\n"
+                        ),
+                    )
+                except Exception:
+                    logger.exception("Failed to send lead notification email for lead %s", lead.id)
+                    await notify(
+                        db,
+                        type=NotificationType.EMAIL_FAILED,
+                        title="Failed to send lead notification email",
+                        agent_id=agent.id,
+                        resource_type="lead",
+                        resource_id=lead.id,
+                    )
+    except Exception:
+        logger.exception("Failed to notify about new lead %s", lead.id)

@@ -20,6 +20,7 @@ class LeadOut(BaseModel):
     assigned_operator_id: uuid.UUID | None
     notes: str | None
     created_at: datetime
+    archived_at: datetime | None
 
     model_config = {"from_attributes": True}
 
@@ -36,3 +37,8 @@ class PaginatedLeads(BaseModel):
     total: int
     page: int
     page_size: int
+    # Counts per status across the whole (role/agent/archived-scoped) lead
+    # set, ignoring the current status filter — mirrors
+    # PaginatedConversations.status_counts so the tab counts stay stable
+    # as the user filters rather than shrinking to match the active view.
+    status_counts: dict[str, int]

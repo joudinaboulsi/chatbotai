@@ -34,7 +34,7 @@ async def get_active_request(db: AsyncSession, conversation_id: uuid.UUID) -> Li
 
 
 async def request_handoff(
-    db: AsyncSession, *, agent: Agent, visitor: Visitor, conversation: Conversation
+    db: AsyncSession, *, agent: Agent, visitor: Visitor, conversation: Conversation, reason: str | None = None
 ) -> LiveAgentRequest:
     existing = await get_active_request(db, conversation.id)
     if existing is not None:
@@ -55,10 +55,13 @@ async def request_handoff(
         db, agent=agent, visitor=visitor, conversation=conversation, source=LeadSource.HUMAN_SUPPORT_REQUEST
     )
 
+    title = f"Live agent requested: {visitor.name or 'Unknown visitor'}"
+    if reason:
+        title += f" ({reason})"
     await notify(
         db,
         type=NotificationType.LIVE_AGENT_REQUEST,
-        title=f"Live agent requested: {visitor.name or 'Unknown visitor'}",
+        title=title,
         agent_id=agent.id,
         resource_type="live_agent_request",
         resource_id=request.id,
@@ -79,6 +82,7 @@ async def request_handoff(
                     f"Name: {visitor.name or 'N/A'}\n"
                     f"Email: {visitor.email or 'N/A'}\n"
                     f"Phone: {visitor.phone or 'N/A'}\n"
+                    f"Reason: {reason or 'N/A'}\n"
                     f"Agent: {agent.name}\n"
                     f"Requested: {request.requested_at.isoformat()}\n"
                     f"Conversation: {conversation.id}\n"

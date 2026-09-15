@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, EmailStr, Field
 
-from app.models.enums import AgentStatus, WidgetPosition, WidgetSize
+from app.models.enums import AgentChannel, AgentStatus, WidgetPosition, WidgetSize
 
 
 class AgentCreate(BaseModel):
@@ -14,6 +14,7 @@ class AgentCreate(BaseModel):
     remarks: str | None = None
     languages: list[str] = Field(default_factory=lambda: ["en"])
     notification_email: EmailStr | None = None
+    channel: AgentChannel = AgentChannel.WEB
 
 
 class AgentUpdate(BaseModel):
@@ -35,6 +36,7 @@ class AgentOut(BaseModel):
     remarks: str | None
     languages: list[str]
     status: AgentStatus
+    channel: AgentChannel
     notification_email: str | None
     created_at: datetime
     updated_at: datetime
@@ -49,6 +51,7 @@ class AgentListItem(BaseModel):
     industry: str | None
     languages: list[str]
     status: AgentStatus
+    channel: AgentChannel
     created_at: datetime
 
     model_config = {"from_attributes": True}

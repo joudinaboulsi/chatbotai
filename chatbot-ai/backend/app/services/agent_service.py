@@ -19,6 +19,7 @@ async def create_agent(db: AsyncSession, data: AgentCreate, created_by: uuid.UUI
         remarks=data.remarks,
         languages=data.languages,
         notification_email=data.notification_email,
+        channel=data.channel,
         created_by=created_by,
     )
     db.add(agent)

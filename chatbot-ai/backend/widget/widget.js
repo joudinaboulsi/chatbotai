@@ -164,6 +164,68 @@
     return "rgba(" + r + "," + g + "," + b + "," + alpha + ")";
   }
 
+  // Small hand-drawn icon set for quick-reply cards (see _qrIconSvg below) —
+  // no icon library dependency, consistent with the rest of this file.
+  // Each entry is just the inner <path>/<circle> markup for a 24x24,
+  // stroke-based (currentColor) icon.
+  var _QR_ICONS = {
+    cart: '<path d="M6 8h12l-1.5 9a2 2 0 0 1-2 1.7H9.5a2 2 0 0 1-2-1.7L6 8Z"/><path d="M9 8V6a3 3 0 0 1 6 0v2"/>',
+    support: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3"/><path d="M12 4v3M12 17v3M4 12h3M17 12h3"/>',
+    chart: '<path d="M4 20V10M12 20V4M20 20v-7"/>',
+    user: '<circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/>',
+    plug: '<path d="M9 3v4M15 3v4M7 7h10l-1 6a4 4 0 0 1-4 3.5 4 4 0 0 1-4-3.5L7 7Z"/><path d="M12 16.5V21"/>',
+    code: '<path d="M8 8l-4 4 4 4M16 8l4 4-4 4"/>',
+    search: '<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+    tag: '<path d="M12 3h6a2 2 0 0 1 2 2v6l-9 9-8-8 9-9Z"/><circle cx="16" cy="8" r="1.4"/>',
+    megaphone: '<path d="M3 10v4a1 1 0 0 0 1 1h2l5 4V5L6 9H4a1 1 0 0 0-1 1Z"/><path d="M15 9a3 3 0 0 1 0 6"/><path d="M18 6a7 7 0 0 1 0 12"/>',
+    card: '<rect x="3" y="6" width="18" height="12" rx="2"/><path d="M3 10h18"/>',
+    shield: '<path d="M12 3l7 3v6c0 5-3.5 7.5-7 9-3.5-1.5-7-4-7-9V6l7-3Z"/>',
+    pin: '<path d="M12 21s7-6.5 7-11a7 7 0 1 0-14 0c0 4.5 7 11 7 11Z"/><circle cx="12" cy="10" r="2.5"/>',
+    lock: '<rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    chat: '<path d="M21 11.5a8.5 8.5 0 0 1-8.5 8.5c-1.2 0-2.4-.3-3.4-.8L3 21l1.8-4.8A8.5 8.5 0 1 1 21 11.5Z"/>',
+    back: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
+    sparkles: '<path d="M12 3l1.5 4.5L18 9l-4.5 1.5L12 15l-1.5-4.5L6 9l4.5-1.5L12 3Z"/><path d="M19 15l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7.7-2Z"/>',
+    box: '<path d="M21 8l-9-5-9 5 9 5 9-5Z"/><path d="M3 8v8l9 5 9-5V8"/><path d="M12 13v8"/>',
+    dots: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>',
+    alert: '<path d="M12 3 2 20h20L12 3Z"/><path d="M12 10v4"/><circle cx="12" cy="17" r="0.6" fill="currentColor" stroke="none"/>',
+  };
+
+  // Maps a quick-reply option's opaque routing `value` to one of the icons
+  // above by keyword, so every menu/leaf option gets something on-topic
+  // without the backend having to carry icon choices in message_metadata.
+  function _qrIconKey(value) {
+    value = value || "";
+    if (value === "menu_sales") return "cart";
+    if (value === "menu_support") return "support";
+    if (value === "menu_reporting" || value.indexOf("reporting") !== -1 || value.indexOf("traffic") !== -1) return "chart";
+    if (value === "menu_human" || value.indexOf("human_reason_") === 0 || value.indexOf("account_login") !== -1) return "user";
+    if (value === "continue_ai") return "sparkles";
+    if (value.indexOf("back") !== -1) return "back";
+    if (value.indexOf("smpp") !== -1 || value === "support_cat_connection") return "plug";
+    if (value.indexOf("http_api") !== -1 || value === "sales_api") return "code";
+    if (value.indexOf("hlr") !== -1) return "search";
+    if (value.indexOf("sender_id") !== -1 || value === "support_cat_senderid") return "tag";
+    if (value.indexOf("campaign") !== -1) return "megaphone";
+    if (value.indexOf("billing") !== -1 || value.indexOf("balance") !== -1 || value === "support_cat_account") return "card";
+    if (value.indexOf("ip_whitelist") !== -1 || value.indexOf("security") !== -1) return "shield";
+    if (value.indexOf("routing") !== -1 || value.indexOf("destination") !== -1) return "pin";
+    if (value.indexOf("otp") !== -1) return "lock";
+    if (value.indexOf("failure") !== -1) return "alert";
+    if (value.indexOf("country") !== -1) return "pin";
+    if (value.indexOf("other") !== -1 || value.indexOf("integration") !== -1) return "dots";
+    if (value.indexOf("msgid") !== -1 || value.indexOf("dlr") !== -1 || value.indexOf("delivery") !== -1) return "chat";
+    if (value.indexOf("sales_") === 0) return "box";
+    return "chat";
+  }
+
+  function _qrIconSvg(value) {
+    var inner = _QR_ICONS[_qrIconKey(value)] || _QR_ICONS.chat;
+    return (
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" ' +
+      'stroke-linecap="round" stroke-linejoin="round">' + inner + "</svg>"
+    );
+  }
+
   function ChatWidget() {
     this.config = null;
     this.sessionToken = null;
@@ -411,14 +473,49 @@
       ".handoff-buttons button.primary:hover { opacity: 0.92; background: " +
       c.button_color +
       "; }" +
-      ".quick-replies { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }" +
-      ".quick-replies button { padding: 9px 14px; border-radius: 14px; border: 1.5px solid " +
-      c.primary_color +
+      ".quick-replies { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 8px; margin-top: 8px; }" +
+      ".qr-card { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; padding: 11px; border-radius: 14px; border: 1.5px solid " +
+      hexToRgba(c.primary_color, 0.28) +
       "; background: #fff; color: " +
+      c.text_color +
+      "; cursor: pointer; font-size: 0.86em; font-weight: 500; text-align: left; line-height: 1.25; transition: background 150ms ease, transform 150ms ease, opacity 150ms ease, border-color 150ms ease; }" +
+      ".qr-card:hover:not(:disabled) { background: " +
+      hexToRgba(c.primary_color, 0.06) +
+      "; border-color: " +
       c.primary_color +
-      "; cursor: pointer; font-size: 0.9em; font-weight: 500; text-align: left; transition: background 150ms ease, transform 150ms ease, opacity 150ms ease; }" +
-      ".quick-replies button:hover:not(:disabled) { background: rgba(0,0,0,0.04); transform: translateY(-1px); }" +
-      ".quick-replies button:disabled { opacity: 0.5; cursor: default; transform: none; }" +
+      "; transform: translateY(-1px); }" +
+      ".qr-card:disabled { opacity: 0.5; cursor: default; transform: none; }" +
+      ".qr-card-icon { width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; background: " +
+      hexToRgba(c.primary_color, 0.12) +
+      "; color: " +
+      c.primary_color +
+      "; }" +
+      ".qr-card-icon svg { width: 16px; height: 16px; }" +
+      ".chat-chart { margin-top: 8px; padding: 10px 10px 6px; border-radius: 12px; background: rgba(0,0,0,0.03); color: " +
+      c.text_color +
+      "; }" +
+      ".chat-chart-legend { display: flex; flex-wrap: wrap; margin-top: 2px; }" +
+      ".stat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(92px, 1fr)); gap: 8px; margin-top: 8px; }" +
+      ".stat-tile { padding: 9px 11px; border-radius: 12px; background: rgba(0,0,0,0.03); border-left: 3px solid " +
+      c.primary_color +
+      "; }" +
+      ".stat-tile-value { font-size: 1.05em; font-weight: 700; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }" +
+      ".stat-tile-label { font-size: 0.72em; opacity: 0.62; margin-top: 2px; text-transform: uppercase; letter-spacing: 0.03em; }" +
+      ".stat-tile.tone-positive { border-left-color: #16a34a; }" +
+      ".stat-tile.tone-negative { border-left-color: #dc2626; }" +
+      ".progress-block { margin-top: 10px; }" +
+      ".progress-header { display: flex; justify-content: space-between; font-size: 0.82em; font-weight: 600; margin-bottom: 4px; }" +
+      ".progress-track { height: 8px; border-radius: 5px; background: rgba(0,0,0,0.08); overflow: hidden; }" +
+      ".progress-fill { height: 100%; border-radius: 5px; background: #16a34a; transition: width 400ms ease; }" +
+      ".progress-fill.tone-negative { background: #dc2626; }" +
+      ".progress-sub { display: flex; flex-wrap: wrap; gap: 10px; font-size: 0.76em; opacity: 0.68; margin-top: 5px; }" +
+      ".report-section-title { font-size: 0.78em; font-weight: 700; text-transform: uppercase; letter-spacing: 0.03em; opacity: 0.6; margin: 10px 0 4px; }" +
+      ".report-rows { display: flex; flex-direction: column; gap: 4px; }" +
+      ".report-row { display: flex; align-items: baseline; gap: 6px; padding: 6px 9px; border-radius: 9px; background: rgba(0,0,0,0.03); font-size: 0.86em; }" +
+      ".report-row-label { font-weight: 700; flex-shrink: 0; }" +
+      ".report-row-detail { opacity: 0.72; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }" +
+      ".report-header-title { font-size: 1em; font-weight: 700; margin-top: 2px; }" +
+      ".report-header-period { font-size: 0.78em; opacity: 0.6; margin-top: 1px; }" +
       ".input-area { display: flex; align-items: center; gap: 8px; padding: 12px; border-top: 1px solid rgba(0,0,0,0.08); background: " +
       c.background_color +
       "; }" +
@@ -621,6 +718,46 @@
     this.unreadBadge.classList.add("hidden");
   };
 
+  // Shared by the standard quick-reply menus (metadata.options) and the
+  // report drill-down buttons (metadata.report_actions) — same icon-card
+  // grid either way, just a different option list and a fresh click
+  // handler bound per render.
+  ChatWidget.prototype._buildQuickRepliesNode = function (options) {
+    var self = this;
+    var wrap = el("div", { class: "quick-replies" });
+    options.forEach(function (opt) {
+      var icon = el("span", { class: "qr-card-icon" });
+      icon.innerHTML = _qrIconSvg(opt.value);
+      var btn = el(
+        "button",
+        { class: "qr-card", onclick: function () { self._sendQuickReply(opt, wrap); } },
+        [icon, opt.label]
+      );
+      wrap.appendChild(btn);
+    });
+    return wrap;
+  };
+
+  // Compact labeled rows for a report's Peak Traffic / Low Activity /
+  // breakdown sections — `rows` items are {date, primary, secondary}
+  // (peak/low) or {label/date, primary, secondary} (breakdown), all
+  // computed server-side from real data (see smsc_ai_service.py).
+  ChatWidget.prototype._appendReportRows = function (col, title, rows) {
+    if (!Array.isArray(rows) || !rows.length) return;
+    col.appendChild(el("div", { class: "report-section-title" }, [title]));
+    var list = el("div", { class: "report-rows" });
+    rows.forEach(function (r) {
+      var detail = [r.primary, r.secondary].filter(Boolean).join(" · ");
+      list.appendChild(
+        el("div", { class: "report-row" }, [
+          el("span", { class: "report-row-label" }, [String(r.date || "")]),
+          el("span", { class: "report-row-detail" }, [detail]),
+        ])
+      );
+    });
+    col.appendChild(list);
+  };
+
   ChatWidget.prototype._renderMessage = function (message) {
     if (this.renderedMessageIds[message.id]) return;
     this.renderedMessageIds[message.id] = true;
@@ -659,14 +796,75 @@
       col.appendChild(el("div", { class: "handoff-buttons" }, [yesBtn, noBtn]));
     }
 
-    if (Array.isArray(metadata.options)) {
-      var self2 = this;
-      var wrap = el("div", { class: "quick-replies" });
-      metadata.options.forEach(function (opt) {
-        var btn = el("button", { onclick: function () { self2._sendQuickReply(opt, wrap); } }, [opt.label]);
-        wrap.appendChild(btn);
+    // Dashboard-style report content (see smsc_ai_service._build_report_
+    // extras/_build_breakdown_rows on the backend — every number here came
+    // from a real tool call, never from the model's own text) renders in a
+    // fixed top-to-bottom order: metric cards, delivery-rate progress,
+    // trend chart, peak/low-activity rows, breakdown rows, then the
+    // contextual drill-down buttons — with the generic Sales/Support/Live-
+    // Agent follow-up options always last, so a report reads data-first.
+    if (metadata.header && (metadata.header.title || metadata.header.period)) {
+      if (metadata.header.title) {
+        col.appendChild(el("div", { class: "report-header-title" }, ["📊 " + metadata.header.title]));
+      }
+      if (metadata.header.period) {
+        col.appendChild(el("div", { class: "report-header-period" }, [metadata.header.period]));
+      }
+    }
+
+    if (Array.isArray(metadata.stats) && metadata.stats.length) {
+      var statGrid = el("div", { class: "stat-grid" });
+      metadata.stats.forEach(function (stat) {
+        var tone = ["positive", "negative", "neutral"].indexOf(stat.tone) !== -1 ? stat.tone : "neutral";
+        statGrid.appendChild(
+          el("div", { class: "stat-tile tone-" + tone }, [
+            el("div", { class: "stat-tile-value" }, [String(stat.value)]),
+            el("div", { class: "stat-tile-label" }, [stat.label]),
+          ])
+        );
       });
-      col.appendChild(wrap);
+      col.appendChild(statGrid);
+    }
+
+    if (metadata.progress && typeof metadata.progress.percent === "number") {
+      var pct = Math.max(0, Math.min(100, metadata.progress.percent));
+      var fillTone = pct >= 90 ? "" : " tone-negative";
+      var progressBlock = el("div", { class: "progress-block" }, [
+        el("div", { class: "progress-header" }, [
+          el("span", {}, ["Delivered"]),
+          el("span", {}, [pct + "%"]),
+        ]),
+        el("div", { class: "progress-track" }, [
+          el("div", { class: "progress-fill" + fillTone, style: { width: pct + "%" } }),
+        ]),
+      ]);
+      if (Array.isArray(metadata.progress.sub) && metadata.progress.sub.length) {
+        var subRow = el("div", { class: "progress-sub" });
+        metadata.progress.sub.forEach(function (s) {
+          subRow.appendChild(el("span", {}, [s.label + ": " + (s.percent != null ? s.percent + "%" : "—")]));
+        });
+        progressBlock.appendChild(subRow);
+      }
+      col.appendChild(progressBlock);
+    }
+
+    if (metadata.chart) {
+      var chartNode = this._buildChartNode(metadata.chart);
+      if (chartNode) col.appendChild(chartNode);
+    }
+
+    this._appendReportRows(col, "🔥 Peak Traffic", metadata.peak);
+    this._appendReportRows(col, "📉 Low Activity", metadata.low);
+    if (metadata.breakdown && Array.isArray(metadata.breakdown.rows) && metadata.breakdown.rows.length) {
+      this._appendReportRows(col, metadata.breakdown.title, metadata.breakdown.rows);
+    }
+
+    if (Array.isArray(metadata.report_actions) && metadata.report_actions.length) {
+      col.appendChild(this._buildQuickRepliesNode(metadata.report_actions));
+    }
+
+    if (Array.isArray(metadata.options)) {
+      col.appendChild(this._buildQuickRepliesNode(metadata.options));
     }
 
     if (!this.isOpen && !isVisitor && !isLocalEcho) {
@@ -674,6 +872,78 @@
     }
 
     this.messagesEl.scrollTop = this.messagesEl.scrollHeight;
+  };
+
+  // Renders a small inline SVG line chart from the backend's structured
+  // chart metadata (see smsc_ai_service._build_chart on the Python side —
+  // it only ever exists when a tool call returned real day-by-day data).
+  // No chart library dependency: this widget is a single vanilla-JS file
+  // with no bundler, so pulling in a charting library just for this would
+  // be a much bigger change than the two-series line chart it needs to
+  // draw.
+  ChatWidget.prototype._buildChartNode = function (chart) {
+    if (!chart || chart.type !== "line") return null;
+    var labels = Array.isArray(chart.labels) ? chart.labels : [];
+    var series = Array.isArray(chart.series) ? chart.series : [];
+    var n = labels.length;
+    if (n < 2 || !series.length) return null;
+
+    var W = 300, H = 150, padL = 8, padR = 8, padT = 22, padB = 20;
+    var plotW = W - padL - padR;
+    var plotH = H - padT - padB;
+    var colors = ["#2563eb", "#16a34a", "#dc2626", "#9333ea"];
+
+    var max = 0;
+    series.forEach(function (s) {
+      (s.values || []).forEach(function (v) {
+        if (typeof v === "number" && v > max) max = v;
+      });
+    });
+    if (max <= 0) max = 1;
+
+    function xAt(i) { return padL + (plotW * i) / (n - 1); }
+    function yAt(v) { return padT + plotH - (plotH * (typeof v === "number" ? v : 0)) / max; }
+
+    var svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" style="width:100%;height:auto;display:block" role="img" aria-label="' +
+      escapeHtml(chart.title || "Chart") + '">';
+    svg += '<text x="' + padL + '" y="13" font-size="11" font-weight="600" fill="currentColor">' +
+      escapeHtml(chart.title || "") + "</text>";
+    svg += '<line x1="' + padL + '" y1="' + (padT + plotH) + '" x2="' + (padL + plotW) + '" y2="' + (padT + plotH) +
+      '" stroke="currentColor" stroke-opacity="0.15" />';
+
+    series.forEach(function (s, si) {
+      var color = colors[si % colors.length];
+      var values = s.values || [];
+      var pts = values.map(function (v, i) { return xAt(i).toFixed(1) + "," + yAt(v).toFixed(1); }).join(" ");
+      svg += '<polyline points="' + pts + '" fill="none" stroke="' + color +
+        '" stroke-width="2" stroke-linejoin="round" stroke-linecap="round" />';
+      values.forEach(function (v, i) {
+        svg += '<circle cx="' + xAt(i).toFixed(1) + '" cy="' + yAt(v).toFixed(1) + '" r="2.5" fill="' + color + '" />';
+      });
+    });
+
+    svg += '<text x="' + padL + '" y="' + (H - 4) + '" font-size="9" fill="currentColor" fill-opacity="0.6">' +
+      escapeHtml(labels[0] || "") + "</text>";
+    svg += '<text x="' + (padL + plotW) + '" y="' + (H - 4) +
+      '" font-size="9" fill="currentColor" fill-opacity="0.6" text-anchor="end">' +
+      escapeHtml(labels[n - 1] || "") + "</text>";
+    svg += "</svg>";
+
+    var legend = series
+      .map(function (s, si) {
+        var color = colors[si % colors.length];
+        return (
+          '<span style="display:inline-flex;align-items:center;gap:4px;margin:2px 10px 0 0;font-size:11px;opacity:0.85">' +
+          '<span style="width:8px;height:8px;border-radius:50%;background:' + color + ';display:inline-block"></span>' +
+          escapeHtml(s.name || "") +
+          "</span>"
+        );
+      })
+      .join("");
+
+    var wrap = el("div", { class: "chat-chart" });
+    wrap.innerHTML = svg + '<div class="chat-chart-legend">' + legend + "</div>";
+    return wrap;
   };
 
   ChatWidget.prototype._respondHandoff = async function (accepted) {
@@ -741,7 +1011,23 @@
       if (this.lastMessageId) params += "&after=" + encodeURIComponent(this.lastMessageId);
       var data = await apiRequest("/" + AGENT_ID + "/messages?" + params, { method: "GET" });
       this.conversationStatus = data.conversation_status;
-      data.messages.forEach(this._renderMessage.bind(this));
+      var self = this;
+      data.messages.forEach(function (message) {
+        // The visitor's own messages are never included in a send's
+        // response (see conversation_service.handle_visitor_message on the
+        // backend — reply_messages is AI/system only) because they're
+        // already on screen via the local echo rendered at send time (see
+        // _sendCurrentInput/_sendQuickReply). But this poll endpoint fetches
+        // full history after a cursor with no such exclusion, so without
+        // this it re-renders the visitor's own message a second time,
+        // under its real id, once it shows up here — advance the cursor
+        // past it without rendering.
+        if (message.sender_type === "visitor") {
+          self.lastMessageId = message.id;
+          return;
+        }
+        self._renderMessage(message);
+      });
     } catch (e) {
       // Silent — polling failures shouldn't interrupt the visitor's session.
     }

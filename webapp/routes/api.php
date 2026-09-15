@@ -11,7 +11,10 @@ Route::middleware('smsc.auth')->group(function () {
         Route::get('/balance', [SmscAccountController::class, 'balance']);
         Route::get('/traffic', [SmscAccountController::class, 'traffic']);
         Route::get('/delivery-stats', [SmscAccountController::class, 'deliveryStats']);
+        Route::get('/traffic/breakdown', [SmscAccountController::class, 'trafficBreakdown']);
+        Route::get('/failures', [SmscAccountController::class, 'failureAnalysis']);
         Route::get('/connections', [SmscAccountController::class, 'connections']);
+        Route::get('/sender-ids', [SmscAccountController::class, 'senderIds']);
         Route::get('/status', [SmscAccountController::class, 'status']);
         Route::get('/smpp-status', [SmscAccountController::class, 'smppStatus']);
         Route::get('/http-api-status', [SmscAccountController::class, 'httpApiStatus']);
@@ -28,4 +31,7 @@ Route::middleware('smsc.auth')->group(function () {
 
     // Platform-wide SMS package tiers, not scoped to a single user.
     Route::get('/packages', [SmscAccountController::class, 'packages']);
+
+    // Platform-wide product/service catalog, not scoped to a single user.
+    Route::get('/services', [SmscAccountController::class, 'services']);
 });

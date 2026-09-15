@@ -42,7 +42,10 @@ _TOOL_ENDPOINTS: dict[str, tuple[str, str, str | None]] = {
     "get_smsc_balance": ("/users/{user}/balance", "GET", None),
     "get_smsc_traffic": ("/users/{user}/traffic", "GET", None),
     "get_smsc_delivery_stats": ("/users/{user}/delivery-stats", "GET", None),
+    "get_smsc_traffic_breakdown": ("/users/{user}/traffic/breakdown", "GET", None),
+    "get_smsc_failure_analysis": ("/users/{user}/failures", "GET", None),
     "get_smsc_connections": ("/users/{user}/connections", "GET", None),
+    "get_smsc_sender_ids": ("/users/{user}/sender-ids", "GET", None),
     "get_smsc_account_status": ("/users/{user}/status", "GET", None),
     "get_smsc_smpp_status": ("/users/{user}/smpp-status", "GET", None),
     "get_smsc_http_api_status": ("/users/{user}/http-api-status", "GET", None),
@@ -61,6 +64,17 @@ _TOOL_ENDPOINTS: dict[str, tuple[str, str, str | None]] = {
     # to both roles.
     "get_smsc_pricing": ("/pricing", "GET", None),
 }
+
+# Every tool above whose endpoint has a {user} placeholder — i.e. scoped to
+# the caller's own SMSC account. A support-role session has no SMSC
+# account of its own (see smsc_ai_service._SUPPORT_ROLE_INSTRUCTIONS), so
+# none of these make sense for it, even though session_row.smsc_user_id is
+# still set (to the support staffer's own users.id) and would otherwise
+# happily resolve. Enforced here, not just by which tools the AI is
+# offered for that role (see smsc_ai_service._tools_for_role).
+_ACCOUNT_SCOPED_TOOLS = frozenset(
+    name for name, (endpoint, _method, _role) in _TOOL_ENDPOINTS.items() if "{user}" in endpoint
+)
 
 
 async def get_settings_row(db: AsyncSession) -> SMSCSettings | None:
@@ -125,6 +139,33 @@ async def get_packages(db: AsyncSession, *, conversation_id: uuid.UUID) -> list[
         request_type="GET", response_status=200, success=True,
     )
     return body.get("packages") or []
+
+
+async def get_services_public(db: AsyncSession, *, conversation_id: uuid.UUID) -> list[dict] | None:
+    """Platform-wide product/service catalog, for the widget's Sales menu.
+    Unlike every other call in this module (except get_packages/
+    get_pricing_public above), this isn't gated behind an authenticated
+    SmscSession — both anonymous prospects and logged-in dashboard users
+    see the same catalog. Returns None if the SMSC integration isn't
+    enabled/configured, or the call fails — the caller falls back to its
+    own hardcoded menu rather than surfacing an error."""
+    if not await is_enabled(db):
+        return None
+    try:
+        config = await _build_config(db)
+        body = await smsc_client.get_services(config)
+    except SmscApiError as exc:
+        await _log_call(
+            db, conversation_id=conversation_id, smsc_user_id=None, endpoint="/services",
+            request_type="GET", response_status=None, success=False, error_message=str(exc),
+        )
+        return None
+
+    await _log_call(
+        db, conversation_id=conversation_id, smsc_user_id=None, endpoint="/services",
+        request_type="GET", response_status=200, success=True,
+    )
+    return body.get("services") or []
 
 
 async def get_pricing_public(db: AsyncSession, *, conversation_id: uuid.UUID, service_type: str = "sms_mt") -> list[dict] | None:
@@ -240,115 +281,25 @@ async def start_pending(
     return session_row
 
 
-class ValidationResult:
-    def __init__(self, *, ok: bool, message: str, pending_question: str | None = None) -> None:
-        self.ok = ok
-        self.message = message
-        self.pending_question = pending_question
-
-
-_MAX_FAILED_ATTEMPTS = 3
-
-
-async def validate_and_authenticate(
-    db: AsyncSession, *, session_row: SmscSession, username: str, conversation_id: uuid.UUID
-) -> ValidationResult:
-    settings_row = await get_settings_row(db)
-    try:
-        config = await _build_config(db)
-    except SmscUnavailableError:
-        await _log_call(
-            db,
-            conversation_id=conversation_id,
-            smsc_user_id=None,
-            endpoint="/auth/validate-user",
-            request_type="POST",
-            response_status=None,
-            success=False,
-            error_message="SMSC integration not configured",
-        )
-        return ValidationResult(
-            ok=False,
-            message="I'm unable to retrieve your SMSC account information right now. Please try again later or contact support.",
-        )
-
-    try:
-        body = await smsc_client.validate_user(config, username)
-    except SmscUnavailableError as exc:
-        await _log_call(
-            db, conversation_id=conversation_id, smsc_user_id=None, endpoint="/auth/validate-user",
-            request_type="POST", response_status=None, success=False, error_message=str(exc),
-        )
-        return ValidationResult(
-            ok=False,
-            message="I'm unable to retrieve your SMSC account information right now. Please try again later or contact support.",
-        )
-    except SmscApiError as exc:
-        await _log_call(
-            db, conversation_id=conversation_id, smsc_user_id=None, endpoint="/auth/validate-user",
-            request_type="POST", response_status=None, success=False, error_message=str(exc),
-        )
-        return ValidationResult(
-            ok=False,
-            message="You don't have permission to access this information. Please contact support.",
-        )
-
-    await _log_call(
-        db, conversation_id=conversation_id, smsc_user_id=None, endpoint="/auth/validate-user",
-        request_type="POST", response_status=200, success=bool(body.get("success")),
-    )
-
-    if not body.get("success"):
-        session_row.failed_attempts += 1
-        await db.flush()
-        if session_row.failed_attempts >= _MAX_FAILED_ATTEMPTS:
-            return ValidationResult(
-                ok=False,
-                message=(
-                    "I still couldn't find an SMSC account with that username. "
-                    "Please contact support for help accessing your account."
-                ),
-            )
-        return ValidationResult(
-            ok=False,
-            message="I couldn't find an SMSC account with that username. Please check the username and try again.",
-        )
-
-    user = body.get("user") or {}
-    smsc_user_id = str(user.get("id")) if user.get("id") is not None else None
-    if not smsc_user_id:
-        return ValidationResult(
-            ok=False,
-            message="I'm unable to retrieve your SMSC account information right now. Please try again later or contact support.",
-        )
-
-    expire_minutes = settings_row.session_expire_minutes if settings_row else 30
-    session_row.smsc_user_id = smsc_user_id
-    session_row.username = str(user.get("username") or username)
-    session_row.role = str(user.get("role")) if user.get("role") else None
-    session_row.status = SmscSessionStatus.AUTHENTICATED
-    session_row.authenticated_at = datetime.now(timezone.utc)
-    session_row.expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
-    session_row.failed_attempts = 0
-    pending_question = session_row.pending_question
-    session_row.pending_question = None
-    await db.flush()
-
-    return ValidationResult(ok=True, message="Your account has been verified.", pending_question=pending_question)
-
-
-async def identify_from_widget_login_token(
-    db: AsyncSession, *, conversation_id: uuid.UUID, visitor_id: uuid.UUID, login_token: str
-) -> tuple[str, str | None] | None:
-    """Silently authenticates a brand-new conversation using the Laravel
-    dashboard's short-lived widget login token, so a visitor who is already
-    signed into the webapp isn't asked to retype their username. Returns
-    (username, role) on success, or None on any failure (missing/expired/
-    already-used token, integration disabled, etc.) — callers must fall back
-    to the normal ask-for-username flow silently, without surfacing an error.
-    The role is what lets the widget tell a support-staff dashboard login
-    apart from a regular customer's at session-creation time, before either
-    has said a word — see app.api.routes.widget.create_session."""
+async def resolve_widget_login_token(
+    db: AsyncSession, *, conversation_id: uuid.UUID, login_token: str
+) -> tuple[str, str, str | None] | None:
+    """Exchanges the Laravel dashboard's short-lived, single-use widget
+    login token for the identity it carries (smsc_user_id, username, role),
+    without binding it to any conversation yet — see
+    authenticate_session_identity for that. Split out from the old
+    identify_from_widget_login_token (still below, now a thin wrapper of
+    both) so a caller can learn *who* a login_token belongs to before
+    deciding *which* conversation it should apply to. That distinction
+    matters because the token is single-use (consumed here via the
+    Laravel side's Cache::pull), so identity must be resolved before, not
+    after, that decision — see app.api.routes.widget.create_session, which
+    uses it to detect a stale/reused session_token now representing a
+    different logged-in person than before, and start a fresh conversation
+    instead of silently continuing to answer as the wrong account.
+    Returns None on any failure (missing/expired/already-used token,
+    integration disabled, etc.) — callers must fall back to the normal
+    ask-for-username flow silently, without surfacing an error."""
     if not await is_enabled(db):
         return None
 
@@ -380,6 +331,17 @@ async def identify_from_widget_login_token(
     if not smsc_user_id or not username:
         return None
 
+    role = str(user.get("role")) if user.get("role") else None
+    return smsc_user_id, str(username), role
+
+
+async def authenticate_session_identity(
+    db: AsyncSession, *, conversation_id: uuid.UUID, visitor_id: uuid.UUID,
+    smsc_user_id: str, username: str, role: str | None,
+) -> SmscSession:
+    """Binds an already-resolved identity (see resolve_widget_login_token)
+    to conversation_id's SmscSession row, overwriting whatever identity
+    (if any — including a different one) was there before."""
     settings_row = await get_settings_row(db)
     expire_minutes = settings_row.session_expire_minutes if settings_row else 30
 
@@ -387,8 +349,8 @@ async def identify_from_widget_login_token(
         db, conversation_id=conversation_id, visitor_id=visitor_id, pending_question=""
     )
     session_row.smsc_user_id = smsc_user_id
-    session_row.username = str(username)
-    session_row.role = str(user.get("role")) if user.get("role") else None
+    session_row.username = username
+    session_row.role = role
     session_row.status = SmscSessionStatus.AUTHENTICATED
     session_row.authenticated_at = datetime.now(timezone.utc)
     session_row.expires_at = datetime.now(timezone.utc) + timedelta(minutes=expire_minutes)
@@ -396,6 +358,25 @@ async def identify_from_widget_login_token(
     session_row.pending_question = None
     await db.flush()
 
+    return session_row
+
+
+async def identify_from_widget_login_token(
+    db: AsyncSession, *, conversation_id: uuid.UUID, visitor_id: uuid.UUID, login_token: str
+) -> tuple[str, str | None] | None:
+    """Convenience wrapper for the common case (a brand-new conversation,
+    where there's no existing identity to reconcile against): resolves the
+    login_token and immediately binds it to conversation_id. Returns
+    (username, role) on success, None on any failure — see
+    resolve_widget_login_token for what "failure" covers."""
+    resolved = await resolve_widget_login_token(db, conversation_id=conversation_id, login_token=login_token)
+    if resolved is None:
+        return None
+    smsc_user_id, username, role = resolved
+    session_row = await authenticate_session_identity(
+        db, conversation_id=conversation_id, visitor_id=visitor_id,
+        smsc_user_id=smsc_user_id, username=username, role=role,
+    )
     return session_row.username, session_row.role
 
 
@@ -433,6 +414,11 @@ async def call_tool(
         # Not just hidden from the tool list offered to the model — enforced
         # here too, in case the model calls it anyway.
         raise SmscToolError("You don't have permission to access this information. Please contact support.")
+    if session_row.role == "support" and tool_name in _ACCOUNT_SCOPED_TOOLS:
+        raise SmscToolError(
+            "A support login has no SMSC account of its own. Please give me a message id, username, or "
+            "account you'd like me to look into instead."
+        )
 
     message_id = arguments.get("message_id")
     endpoint = endpoint_template.format(user=session_row.smsc_user_id, message_id=message_id or "")
@@ -460,8 +446,19 @@ async def call_tool(
             result = await smsc_client.get_delivery_stats(
                 config, session_row.smsc_user_id, date_from=date_from, date_to=date_to
             )
+        elif tool_name == "get_smsc_traffic_breakdown":
+            by = arguments.get("by") or "country"
+            result = await smsc_client.get_traffic_breakdown(
+                config, session_row.smsc_user_id, by=by, date_from=date_from, date_to=date_to
+            )
+        elif tool_name == "get_smsc_failure_analysis":
+            result = await smsc_client.get_failure_analysis(
+                config, session_row.smsc_user_id, date_from=date_from, date_to=date_to
+            )
         elif tool_name == "get_smsc_connections":
             result = await smsc_client.get_connections(config, session_row.smsc_user_id)
+        elif tool_name == "get_smsc_sender_ids":
+            result = await smsc_client.get_sender_ids(config, session_row.smsc_user_id)
         elif tool_name == "get_smsc_account_status":
             result = await smsc_client.get_account_status(config, session_row.smsc_user_id)
         elif tool_name == "get_smsc_smpp_status":

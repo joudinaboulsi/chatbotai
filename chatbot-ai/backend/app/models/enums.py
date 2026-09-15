@@ -17,6 +17,11 @@ class AgentStatus(str, enum.Enum):
     INACTIVE = "inactive"
 
 
+class AgentChannel(str, enum.Enum):
+    WEB = "web"
+    WHATSAPP = "whatsapp"
+
+
 class WidgetPosition(str, enum.Enum):
     BOTTOM_RIGHT = "bottom_right"
     BOTTOM_LEFT = "bottom_left"
@@ -76,6 +81,7 @@ class LeadSource(str, enum.Enum):
     SERVICE_INQUIRY = "service_inquiry"
     CONTACT_SALES_REQUEST = "contact_sales_request"
     HUMAN_SUPPORT_REQUEST = "human_support_request"
+    VISITOR_IDENTIFIED = "visitor_identified"
     MANUAL = "manual"
 
 
@@ -89,6 +95,7 @@ class LiveAgentRequestStatus(str, enum.Enum):
 
 class NotificationType(str, enum.Enum):
     NEW_LEAD = "new_lead"
+    VISITOR_IDENTIFIED = "visitor_identified"
     LIVE_AGENT_REQUEST = "live_agent_request"
     NEW_CONVERSATION = "new_conversation"
     KB_PROCESSING_FAILED = "kb_processing_failed"

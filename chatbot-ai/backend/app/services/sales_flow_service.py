@@ -30,8 +30,8 @@ def _t(strings: dict[str, str], locale: str) -> str:
 
 _STR = {
     "sales_greeting": {
-        "en": "Hi! \U0001F44B Welcome! I'm here to help you find the right SMS solution for your business. May I know your name, and what type of business or work you're in?",
-        "ar": "مرحباً! \U0001F44B أهلاً بك! أنا هنا لمساعدتك في إيجاد حل الرسائل النصية المناسب لعملك. هل يمكنني معرفة اسمك، ونوع عملك أو نشاطك التجاري؟",
+        "en": "Hi! \U0001F44B Welcome! I'm here to help you find the right SMS solution for your business. May I know your name and the best phone number to reach you on?",
+        "ar": "مرحباً! \U0001F44B أهلاً بك! أنا هنا لمساعدتك في إيجاد حل الرسائل النصية المناسب لعملك. هل يمكنني معرفة اسمك وأفضل رقم هاتف للتواصل معك؟",
     },
     "human_connected": {
         "en": "You've been connected to our support queue. An agent will join shortly.",

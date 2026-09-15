@@ -94,6 +94,13 @@ export function ConversationDetailPage() {
     load()
   }
 
+  async function handleArchive() {
+    if (!id) return
+    await conversationsApi.archive(id)
+    notify('Conversation archived')
+    navigate('/conversations')
+  }
+
   if (error) return <ErrorBanner message={error} />
   if (!conversation) return <LoadingSpinner />
 
@@ -156,6 +163,9 @@ export function ConversationDetailPage() {
             )}
             <Button variant="secondary" className="w-full" onClick={handleClose}>
               Close Conversation
+            </Button>
+            <Button variant="secondary" className="w-full" onClick={handleArchive}>
+              Archive
             </Button>
           </div>
         </div>

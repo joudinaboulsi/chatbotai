@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -137,6 +138,7 @@ class SmscAccountController extends Controller
             'tps' => $service->tps ?? null,
             'configured' => true,
             'status' => $smpp->status,
+            'connection_status' => $smpp->connection_status,
             'host' => $smpp->host,
             'port' => $smpp->port,
             'system_id' => $smpp->system_id,
@@ -190,8 +192,10 @@ class SmscAccountController extends Controller
     private function serviceFor(int $userId, string $service): ?object
     {
         return DB::table('user_services')
-            ->where('user_id', $userId)
-            ->where('service', $service)
+            ->join('services', 'services.id', '=', 'user_services.service_id')
+            ->where('user_services.user_id', $userId)
+            ->where('services.slug', $service)
+            ->select('user_services.*', 'services.slug as service')
             ->first();
     }
 
@@ -201,7 +205,9 @@ class SmscAccountController extends Controller
     private function servicesFor(int $userId): array
     {
         return DB::table('user_services')
-            ->where('user_id', $userId)
+            ->join('services', 'services.id', '=', 'user_services.service_id')
+            ->where('user_services.user_id', $userId)
+            ->select('user_services.*', 'services.slug as service')
             ->get()
             ->keyBy('service')
             ->all();
@@ -227,6 +233,7 @@ class SmscAccountController extends Controller
                 'host' => $smpp->host,
                 'port' => $smpp->port,
                 'status' => $smpp->status,
+                'connection_status' => $smpp->connection_status,
                 'tls_enabled' => (bool) $smpp->tls_enabled,
                 'allowed_ips' => $this->allowedIpsFor($smpp->id),
             ];
@@ -244,34 +251,96 @@ class SmscAccountController extends Controller
         return response()->json(['connections' => $connections]);
     }
 
+    /**
+     * Backs Sender ID questions ("was my sender ID approved", "which
+     * countries is it enabled for") with the visitor's real rows instead
+     * of the chatbot having to guess or send them off to check a page
+     * that doesn't exist for this demo.
+     */
+    public function senderIds(int $id): JsonResponse
+    {
+        $this->activeUserOrFail($id);
+
+        $senderIds = DB::table('sender_ids')->where('user_id', $id)->orderBy('sender_id')->get();
+
+        return response()->json([
+            'sender_ids' => $senderIds->map(function ($row) {
+                $countries = DB::table('sender_id_countries')
+                    ->join('countries', 'countries.id', '=', 'sender_id_countries.country_id')
+                    ->where('sender_id_countries.sender_id_id', $row->id)
+                    ->orderBy('countries.country_name')
+                    ->get(['countries.country_name', 'countries.iso_code', 'sender_id_countries.enabled']);
+
+                return [
+                    'sender_id' => $row->sender_id,
+                    'sender_type' => $row->sender_type,
+                    'status' => $row->status,
+                    'approved_at' => $row->approved_at,
+                    'countries' => $countries->map(fn ($c) => [
+                        'country' => $c->country_name,
+                        'iso_code' => $c->iso_code,
+                        'enabled' => (bool) $c->enabled,
+                    ]),
+                ];
+            }),
+        ]);
+    }
+
+    /**
+     * `sms_usage` (a pre-aggregated daily-usage table) is referenced nowhere
+     * else in this codebase — no migration, model, or seeder ever creates
+     * it, so this endpoint would throw a "table not found" error the first
+     * time it was actually called. `messages` (see App\Models\Traffic)
+     * already has everything needed — user_id, status, is_sent,
+     * submitted_at — so both report endpoints below are read straight off
+     * it instead, with a day-by-day breakdown for charting (see
+     * chatbot-ai smsc_ai_service's chart-building, which needs real
+     * per-day points, not just a range total).
+     */
     public function traffic(int $id, Request $request): JsonResponse
     {
         $this->activeUserOrFail($id);
 
         [$dateFrom, $dateTo] = $this->resolveDateRange($request);
 
-        $totals = DB::table('sms_usage')
+        $rows = DB::table('messages')
             ->where('user_id', $id)
-            ->whereBetween('usage_date', [$dateFrom, $dateTo])
-            ->selectRaw('
-                COALESCE(SUM(total_submitted), 0) as total_submitted,
-                COALESCE(SUM(total_sent), 0) as total_sent,
-                COALESCE(SUM(total_delivered), 0) as total_delivered,
-                COALESCE(SUM(total_failed), 0) as total_failed,
-                COALESCE(SUM(total_parts), 0) as total_parts,
-                COALESCE(SUM(total_cost), 0) as total_cost
-            ')
-            ->first();
+            ->whereBetween('submitted_at', ["{$dateFrom} 00:00:00", "{$dateTo} 23:59:59"])
+            ->selectRaw("
+                DATE(submitted_at) as usage_date,
+                COUNT(*) as total_submitted,
+                SUM(CASE WHEN is_sent THEN 1 ELSE 0 END) as total_sent,
+                SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) as total_delivered,
+                SUM(CASE WHEN status IN ('FAILED', 'EXPIRED', 'REJECTED') THEN 1 ELSE 0 END) as total_failed
+            ")
+            ->groupBy('usage_date')
+            ->get()
+            ->keyBy(fn ($row) => (string) $row->usage_date);
+
+        $daily = [];
+        $totalSubmitted = $totalSent = $totalDelivered = $totalFailed = 0;
+        foreach ($this->dailyDateRange($dateFrom, $dateTo) as $date) {
+            $row = $rows->get($date);
+            $submitted = (int) ($row->total_submitted ?? 0);
+            $sent = (int) ($row->total_sent ?? 0);
+            $delivered = (int) ($row->total_delivered ?? 0);
+            $failed = (int) ($row->total_failed ?? 0);
+
+            $daily[] = compact('date', 'submitted', 'sent', 'delivered', 'failed');
+            $totalSubmitted += $submitted;
+            $totalSent += $sent;
+            $totalDelivered += $delivered;
+            $totalFailed += $failed;
+        }
 
         return response()->json([
             'date_from' => $dateFrom,
             'date_to' => $dateTo,
-            'total_submitted' => (int) $totals->total_submitted,
-            'total_sent' => (int) $totals->total_sent,
-            'total_delivered' => (int) $totals->total_delivered,
-            'total_failed' => (int) $totals->total_failed,
-            'total_parts' => (int) $totals->total_parts,
-            'total_cost' => (float) $totals->total_cost,
+            'total_submitted' => $totalSubmitted,
+            'total_sent' => $totalSent,
+            'total_delivered' => $totalDelivered,
+            'total_failed' => $totalFailed,
+            'daily' => $daily,
         ]);
     }
 
@@ -281,19 +350,39 @@ class SmscAccountController extends Controller
 
         [$dateFrom, $dateTo] = $this->resolveDateRange($request);
 
-        $totals = DB::table('sms_usage')
+        $rows = DB::table('messages')
             ->where('user_id', $id)
-            ->whereBetween('usage_date', [$dateFrom, $dateTo])
-            ->selectRaw('
-                COALESCE(SUM(total_sent), 0) as total_sent,
-                COALESCE(SUM(total_delivered), 0) as total_delivered,
-                COALESCE(SUM(total_failed), 0) as total_failed
-            ')
-            ->first();
+            ->whereBetween('submitted_at', ["{$dateFrom} 00:00:00", "{$dateTo} 23:59:59"])
+            ->selectRaw("
+                DATE(submitted_at) as usage_date,
+                SUM(CASE WHEN is_sent THEN 1 ELSE 0 END) as total_sent,
+                SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) as total_delivered,
+                SUM(CASE WHEN status IN ('FAILED', 'EXPIRED', 'REJECTED') THEN 1 ELSE 0 END) as total_failed
+            ")
+            ->groupBy('usage_date')
+            ->get()
+            ->keyBy(fn ($row) => (string) $row->usage_date);
 
-        $sent = (int) $totals->total_sent;
-        $delivered = (int) $totals->total_delivered;
-        $failed = (int) $totals->total_failed;
+        $daily = [];
+        $sent = $delivered = $failed = 0;
+        foreach ($this->dailyDateRange($dateFrom, $dateTo) as $date) {
+            $row = $rows->get($date);
+            $daySent = (int) ($row->total_sent ?? 0);
+            $dayDelivered = (int) ($row->total_delivered ?? 0);
+            $dayFailed = (int) ($row->total_failed ?? 0);
+            $dayRate = $daySent > 0 ? round(($dayDelivered / $daySent) * 100, 2) : null;
+
+            $daily[] = [
+                'date' => $date,
+                'sent' => $daySent,
+                'delivered' => $dayDelivered,
+                'failed' => $dayFailed,
+                'delivery_rate_percent' => $dayRate,
+            ];
+            $sent += $daySent;
+            $delivered += $dayDelivered;
+            $failed += $dayFailed;
+        }
         $deliveryRate = $sent > 0 ? round(($delivered / $sent) * 100, 2) : null;
 
         return response()->json([
@@ -303,6 +392,95 @@ class SmscAccountController extends Controller
             'delivered' => $delivered,
             'failed' => $failed,
             'delivery_rate_percent' => $deliveryRate,
+            'daily' => $daily,
+        ]);
+    }
+
+    /**
+     * Groups the same real per-message data traffic()/deliveryStats() read
+     * — by destination country or by sender ID — for the chatbot's "By
+     * Country"/"By Sender ID" drill-down buttons. `by=sender_id` isn't
+     * scoped further since a user only ever has their own sender ids
+     * anyway (enforced by `where('user_id', $id)` below, same as every
+     * other endpoint here).
+     */
+    public function trafficBreakdown(int $id, Request $request): JsonResponse
+    {
+        $this->activeUserOrFail($id);
+
+        $by = $request->query('by', 'country');
+        abort_unless(in_array($by, ['country', 'sender_id'], true), 422, 'Invalid by parameter.');
+
+        [$dateFrom, $dateTo] = $this->resolveDateRange($request);
+        $groupColumn = $by === 'country' ? 'destination_country_code' : 'sender_id_value';
+
+        $rows = DB::table('messages')
+            ->where('user_id', $id)
+            ->whereBetween('submitted_at', ["{$dateFrom} 00:00:00", "{$dateTo} 23:59:59"])
+            ->selectRaw("
+                {$groupColumn} as `group`,
+                COUNT(*) as submitted,
+                SUM(CASE WHEN status = 'DELIVERED' THEN 1 ELSE 0 END) as delivered,
+                SUM(CASE WHEN status IN ('FAILED', 'EXPIRED', 'REJECTED') THEN 1 ELSE 0 END) as failed
+            ")
+            ->groupBy('group')
+            ->orderByDesc('submitted')
+            ->get();
+
+        return response()->json([
+            'by' => $by,
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'groups' => $rows->map(fn ($r) => [
+                'label' => $r->group,
+                'submitted' => (int) $r->submitted,
+                'delivered' => (int) $r->delivered,
+                'failed' => (int) $r->failed,
+                'delivery_rate_percent' => $r->submitted > 0 ? round(($r->delivered / $r->submitted) * 100, 2) : null,
+            ]),
+        ]);
+    }
+
+    /**
+     * Consolidated failure breakdown for the chatbot's "Failure Analysis"
+     * button: same failed messages traffic()/deliveryStats() already
+     * count, grouped three ways (reason, country, sender ID) in one call
+     * so the AI doesn't need three separate round trips. `top_reason` is
+     * computed here (not left to the model) so it's never a guess.
+     */
+    public function failureAnalysis(int $id, Request $request): JsonResponse
+    {
+        $this->activeUserOrFail($id);
+
+        [$dateFrom, $dateTo] = $this->resolveDateRange($request);
+
+        $base = fn () => DB::table('messages')
+            ->where('user_id', $id)
+            ->whereIn('status', ['FAILED', 'EXPIRED', 'REJECTED'])
+            ->whereBetween('submitted_at', ["{$dateFrom} 00:00:00", "{$dateTo} 23:59:59"]);
+
+        $totalFailed = $base()->count();
+
+        $byReason = $base()
+            ->selectRaw("COALESCE(error_message, status) as reason, COUNT(*) as count")
+            ->groupBy('reason')->orderByDesc('count')->limit(5)->get();
+
+        $byCountry = $base()
+            ->selectRaw("destination_country_code as country, COUNT(*) as count")
+            ->groupBy('country')->orderByDesc('count')->limit(5)->get();
+
+        $bySenderId = $base()
+            ->selectRaw("sender_id_value as sender_id, COUNT(*) as count")
+            ->groupBy('sender_id')->orderByDesc('count')->limit(5)->get();
+
+        return response()->json([
+            'date_from' => $dateFrom,
+            'date_to' => $dateTo,
+            'total_failed' => $totalFailed,
+            'top_reason' => $byReason->first()->reason ?? null,
+            'by_reason' => $byReason->map(fn ($r) => ['label' => $r->reason, 'count' => (int) $r->count]),
+            'by_country' => $byCountry->map(fn ($r) => ['label' => $r->country, 'count' => (int) $r->count]),
+            'by_sender_id' => $bySenderId->map(fn ($r) => ['label' => $r->sender_id, 'count' => (int) $r->count]),
         ]);
     }
 
@@ -366,6 +544,28 @@ class SmscAccountController extends Controller
                 'billing_period' => $r->billing_period,
                 'coverage_notes' => $r->coverage_notes,
                 'features' => $r->features ? json_decode($r->features) : [],
+            ]),
+        ]);
+    }
+
+    /**
+     * Platform-wide product/service catalog, not user-scoped — same list
+     * for every prospect. Backs the chatbot's Sales menu so it always
+     * offers every real product instead of a hand-maintained subset.
+     */
+    public function services(): JsonResponse
+    {
+        $rows = DB::table('services')
+            ->orderByRaw("field(category, 'messaging', 'tool')")
+            ->orderBy('name')
+            ->get(['slug', 'name', 'category', 'description']);
+
+        return response()->json([
+            'services' => $rows->map(fn ($r) => [
+                'slug' => $r->slug,
+                'name' => $r->name,
+                'category' => $r->category,
+                'description' => $r->description,
             ]),
         ]);
     }
@@ -462,5 +662,24 @@ class SmscAccountController extends Controller
         $dateFrom = $request->query('date_from') ?: now()->subDays(30)->toDateString();
 
         return [$dateFrom, $dateTo];
+    }
+
+    /**
+     * Every calendar date from $dateFrom to $dateTo inclusive, so a day
+     * with zero messages still shows up as a zero point in `daily` instead
+     * of silently disappearing — a chart built from this shouldn't look
+     * like traffic stopped when it just wasn't grouped.
+     */
+    private function dailyDateRange(string $dateFrom, string $dateTo): array
+    {
+        $dates = [];
+        $cursor = Carbon::parse($dateFrom)->startOfDay();
+        $end = Carbon::parse($dateTo)->startOfDay();
+        while ($cursor->lte($end)) {
+            $dates[] = $cursor->toDateString();
+            $cursor->addDay();
+        }
+
+        return $dates;
     }
 }
