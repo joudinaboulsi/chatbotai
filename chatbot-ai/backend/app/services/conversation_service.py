@@ -26,6 +26,7 @@ from sqlalchemy.orm import selectinload
 from app.models.agent import Agent, AgentBranding
 from app.models.conversation import Conversation, Message, Visitor
 from app.models.enums import ConversationStatus, LeadSource, MessageSender, SmscSessionStatus
+from app.services import history as history_service
 from app.services import lead_detection, rag_service, sales_flow_service, smsc_ai_service, smsc_service
 from app.services.handoff_service import request_handoff
 from app.services.lead_service import create_or_get_lead
@@ -663,7 +664,7 @@ async def handle_visitor_message(
         await db.flush()
         return reply_messages
 
-    history = await _recent_history(db, conversation.id)
+    history = await history_service.recent(db, conversation.id)
     try:
         reply_text, chunks_used = await rag_service.generate_reply(
             db, agent=agent, branding=branding, visitor_message=text, history=history
@@ -857,7 +858,7 @@ async def _handle_smsc_message(
         # available and decides for itself whether a question needs a
         # tool call, so a verified visitor can ask about anything on
         # their account without depending on exact keyword phrasing.
-        history = await _recent_history(db, conversation.id)
+        history = await history_service.recent(db, conversation.id)
         rag_context = await rag_service.get_context_block(db, agent.id, text)
         answer, report = await smsc_ai_service.answer_account_question(
             db,
@@ -890,23 +891,6 @@ async def _handle_smsc_message(
         return [msg]
 
     return None
-
-
-async def _recent_history(db: AsyncSession, conversation_id: uuid.UUID, limit: int = 12) -> list[tuple[str, str]]:
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(limit)
-    )
-    messages = list(reversed(result.scalars().all()))
-    role_map = {
-        MessageSender.VISITOR: "user",
-        MessageSender.AI: "assistant",
-        MessageSender.OPERATOR: "assistant",
-        
-    }
-    return [(role_map[m.sender_type], m.content) for m in messages if m.sender_type in role_map]
 
 
 async def handle_handoff_choice(

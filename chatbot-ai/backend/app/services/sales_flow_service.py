@@ -11,12 +11,12 @@ package data via sales_ai_service's get_packages tool so it never
 invents a price or feature.
 """
 
-from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.agent import Agent, AgentBranding
 from app.models.conversation import Conversation, Message, Visitor
 from app.models.enums import MessageSender
+from app.services import history as history_service
 from app.services import lead_detection, rag_service, sales_ai_service
 from app.services.handoff_service import request_handoff
 from app.services.lead_service import create_or_get_lead
@@ -42,18 +42,6 @@ _STR = {
 
 def greeting_text(locale: str) -> str:
     return _t(_STR["sales_greeting"], locale)
-
-
-async def _recent_history(db: AsyncSession, conversation_id, limit: int = 10) -> list[tuple[str, str]]:
-    result = await db.execute(
-        select(Message)
-        .where(Message.conversation_id == conversation_id)
-        .order_by(Message.created_at.desc())
-        .limit(limit)
-    )
-    messages = list(reversed(result.scalars().all()))
-    role_map = {MessageSender.VISITOR: "user", MessageSender.AI: "assistant", MessageSender.OPERATOR: "assistant"}
-    return [(role_map[m.sender_type], m.content) for m in messages if m.sender_type in role_map]
 
 
 async def handle_sales_step(
@@ -86,7 +74,7 @@ async def handle_sales_step(
     if lead_source is not None:
         await create_or_get_lead(db, agent=agent, visitor=visitor, conversation=conversation, source=lead_source)
 
-    history = await _recent_history(db, conversation.id)
+    history = await history_service.recent(db, conversation.id)
     rag_context = await rag_service.get_context_block(db, agent.id, text)
     answer = await sales_ai_service.answer_sales_message(
         db,

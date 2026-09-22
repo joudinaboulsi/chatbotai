@@ -60,6 +60,12 @@ def set_token_sink(sink: Callable[[str], Awaitable[None]] | None) -> None:
     _token_sink.set(sink)
 
 
+async def emit(text: str) -> None:
+    sink = _token_sink.get()
+    if sink is not None:
+        await sink(text)
+
+
 async def complete_text(**kwargs) -> str:
     """A chat completion whose result is prose, not tool calls.
 

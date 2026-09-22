@@ -732,6 +732,9 @@ async def answer_account_question(
 
         messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": content})
 
+    if first_text:
+        await llm.emit("\n\n")
+
     try:
         final = await llm.complete_text(
             model=llm.tool_model(), messages=messages, temperature=0.2, max_tokens=500,
@@ -739,6 +742,8 @@ async def answer_account_question(
     except Exception:
         logger.exception("SMSC tool-calling follow-up completion failed")
         return UNAVAILABLE_MESSAGE, None
+
+    final = "\n\n".join(p for p in (first_text, final) if p)
 
     # If the model called more than one tool this turn (e.g. both
     # get_smsc_traffic and get_smsc_delivery_stats for the same question),
